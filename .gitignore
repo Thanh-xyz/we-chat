@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Java / Maven build output
+target/
+out/
+build/
+
+# Frontend build output
+dist/
+dist-ssr/
+.vite/
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+*.local
+*.local.*
+application-local.properties
+application-*.local.properties
+application-secret.properties
+application-secrets.properties
+
+# Secrets, keys and certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+secrets/
+secret/
+*.secret
+*.secrets
+*credentials*
+*credential*
+
+# Logs and runtime files
+logs/
+*.log
+*.pid
+*.seed
+*.tmp
+*.temp
+
+# Test and coverage output
+coverage/
+.nyc_output/
+surefire-reports/
+
+# IDE and OS files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

@@ -6,10 +6,13 @@ import main.com.chat.wechat.auth.dto.LoginRequest;
 import main.com.chat.wechat.auth.dto.RegisterRequest;
 import main.com.chat.wechat.auth.model.RefreshToken;
 import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
+import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.JwtToken;
 import main.com.chat.wechat.common.security.JwtTokenService;
+import main.com.chat.wechat.role.model.Role;
+import main.com.chat.wechat.role.repository.RoleRepository;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -19,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -30,6 +35,8 @@ public class AuthService {
 	private final JwtTokenService jwtTokenService;
 	private final JwtProperties jwtProperties;
 	private final PasswordEncoder passwordEncoder;
+	private final RoleRepository roleRepository;
+	private final AuditLogService auditLogService;
 
 	public AuthService(
 			UserRepository userRepository,
@@ -37,13 +44,17 @@ public class AuthService {
 			RefreshTokenGenerator refreshTokenGenerator,
 			JwtTokenService jwtTokenService,
 			JwtProperties jwtProperties,
-			PasswordEncoder passwordEncoder) {
+			PasswordEncoder passwordEncoder,
+			RoleRepository roleRepository,
+			AuditLogService auditLogService) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.refreshTokenGenerator = refreshTokenGenerator;
 		this.jwtTokenService = jwtTokenService;
 		this.jwtProperties = jwtProperties;
 		this.passwordEncoder = passwordEncoder;
+		this.roleRepository = roleRepository;
+		this.auditLogService = auditLogService;
 	}
 
 	@Transactional
@@ -67,23 +78,39 @@ public class AuthService {
 				"OFFLINE",
 				"USER",
 				true,
+				"ACTIVE",
+				false,
+				0,
+				null,
+				0,
+				null,
+				null,
 				now,
 				now);
 
 		userRepository.save(user);
+		Role userRole = roleRepository.findByCode("USER")
+				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role USER is not configured"));
+		roleRepository.replaceUserRoles(user.id(), Set.of(userRole.id()), null, now);
+		auditLogService.log("AUTH_REGISTER", "USER", user.id().toString(), null, "{\"username\":\"" + username + "\"}");
 		return issueTokens(user);
 	}
 
 	@Transactional
 	public AuthResponse login(LoginRequest request) {
 		User user = userRepository.findByUsernameOrEmail(request.identifier().trim())
-				.filter(candidate -> passwordEncoder.matches(request.password(), candidate.passwordHash()))
 				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password"));
 
-		if (!user.enabled()) {
-			throw new ApiException(HttpStatus.FORBIDDEN, "User account is disabled");
+		if (!passwordEncoder.matches(request.password(), user.passwordHash())) {
+			userRepository.recordLoginFailure(user.id(), Instant.now());
+			throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password");
 		}
 
+		if (!user.active()) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "User account is not active");
+		}
+
+		userRepository.recordLoginSuccess(user.id(), Instant.now());
 		return issueTokens(user);
 	}
 
@@ -103,7 +130,7 @@ public class AuthService {
 		}
 
 		User user = userRepository.findById(storedToken.userId())
-				.filter(User::enabled)
+				.filter(User::active)
 				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
 
 		GeneratedRefreshToken newRefreshToken = createRefreshToken(user.id(), now);
@@ -122,14 +149,16 @@ public class AuthService {
 	}
 
 	private AuthResponse issueTokens(User user, GeneratedRefreshToken generatedRefreshToken) {
-		JwtToken accessToken = jwtTokenService.createAccessToken(user);
+		List<String> roles = roleRepository.findRoleCodesByUserId(user.id());
+		List<String> permissions = roleRepository.findPermissionCodesByUserId(user.id());
+		JwtToken accessToken = jwtTokenService.createAccessToken(user, roles, permissions);
 		return new AuthResponse(
 				accessToken.value(),
 				generatedRefreshToken.rawToken(),
 				"Bearer",
 				accessToken.expiresAt(),
 				generatedRefreshToken.expiresAt(),
-				AuthUserResponse.from(user));
+				AuthUserResponse.from(user, roles));
 	}
 
 	private GeneratedRefreshToken createRefreshToken(UUID userId, Instant now) {

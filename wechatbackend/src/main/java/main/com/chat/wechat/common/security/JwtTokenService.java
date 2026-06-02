@@ -12,6 +12,7 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,7 +31,7 @@ public class JwtTokenService {
 		this.objectMapper = objectMapper;
 	}
 
-	public JwtToken createAccessToken(User user) {
+	public JwtToken createAccessToken(User user, List<String> roles, List<String> permissions) {
 		Instant now = Instant.now();
 		Instant expiresAt = now.plus(jwtProperties.accessTokenTtl());
 
@@ -43,7 +44,9 @@ public class JwtTokenService {
 		claims.put("sub", user.id().toString());
 		claims.put("username", user.username());
 		claims.put("email", user.email());
-		claims.put("role", user.role());
+		claims.put("roles", roles);
+		claims.put("permissions", permissions);
+		claims.put("tokenVersion", user.tokenVersion());
 		claims.put("type", "access");
 		claims.put("iat", now.getEpochSecond());
 		claims.put("exp", expiresAt.getEpochSecond());
@@ -81,11 +84,17 @@ public class JwtTokenService {
 				return Optional.empty();
 			}
 
+			List<String> roles = asStringList(claims.get("roles"));
+			if (roles.isEmpty()) {
+				roles = asStringList(claims.get("role"));
+			}
 			return Optional.of(new JwtClaims(
 					UUID.fromString(asString(claims.get("sub"))),
 					asString(claims.get("username")),
 					asString(claims.get("email")),
-					asString(claims.get("role"))));
+					roles,
+					asStringList(claims.get("permissions")),
+					(int) asLong(claims.getOrDefault("tokenVersion", 0))));
 		} catch (Exception exception) {
 			return Optional.empty();
 		}
@@ -118,5 +127,13 @@ public class JwtTokenService {
 			return number.longValue();
 		}
 		return Long.parseLong(value.toString());
+	}
+
+	private List<String> asStringList(Object value) {
+		if (value instanceof List<?> list) {
+			return list.stream().map(Object::toString).toList();
+		}
+		String legacyRole = asString(value);
+		return legacyRole == null || legacyRole.isBlank() ? List.of() : List.of(legacyRole);
 	}
 }

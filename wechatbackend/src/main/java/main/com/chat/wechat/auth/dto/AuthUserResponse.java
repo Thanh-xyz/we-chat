@@ -2,6 +2,7 @@ package main.com.chat.wechat.auth.dto;
 
 import main.com.chat.wechat.user.model.User;
 
+import java.util.List;
 import java.util.UUID;
 
 public record AuthUserResponse(
@@ -11,9 +12,10 @@ public record AuthUserResponse(
 		String displayName,
 		String avatarUrl,
 		String status,
-		String role) {
+		String accountStatus,
+		List<String> roles) {
 
-	public static AuthUserResponse from(User user) {
+	public static AuthUserResponse from(User user, List<String> roles) {
 		return new AuthUserResponse(
 				user.id(),
 				user.username(),
@@ -21,6 +23,7 @@ public record AuthUserResponse(
 				user.displayName(),
 				user.avatarUrl(),
 				user.status(),
-				user.role());
+				user.accountStatus(),
+				roles);
 	}
 }

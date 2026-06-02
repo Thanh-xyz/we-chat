@@ -19,6 +19,31 @@ Thumbs.db
 # Environment files
 .env
 .env.*
+!.env.example
+application-local.properties
+application-*.local.properties
+application-secret.properties
+application-secrets.properties
+
+# Secrets, keys and certificates
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+secrets/
+secret/
+*.secret
+*.secrets
+*credentials*
+*credential*
 
 # Build
 out/
