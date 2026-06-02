@@ -38,6 +38,11 @@ public class AuthController {
 		return authService.refresh(request.refreshToken());
 	}
 
+	@PostMapping("/refresh-token")
+	public AuthResponse refreshToken(@Valid @RequestBody RefreshTokenRequest request) {
+		return authService.refresh(request.refreshToken());
+	}
+
 	@PostMapping("/logout")
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	public void logout(@Valid @RequestBody RefreshTokenRequest request) {
