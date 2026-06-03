@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping({"/api/admin/audit-logs", "/admin/audit-logs"})
+@RequestMapping({"/api/admin/audit-logs"})
 public class AdminAuditLogController {
 	private final AuditLogRepository auditLogRepository;
 
