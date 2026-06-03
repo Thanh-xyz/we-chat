@@ -3,6 +3,7 @@ package main.com.chat.wechat.config;
 import main.com.chat.wechat.common.exception.ErrorResponse;
 import main.com.chat.wechat.common.security.JwtAuthenticationFilter;
 import main.com.chat.wechat.common.security.JwtProperties;
+import main.com.chat.wechat.common.security.RbacProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,7 +23,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 
 @Configuration
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, RbacProperties.class})
 @EnableMethodSecurity
 public class SecurityConfig {
 
@@ -36,7 +37,7 @@ public class SecurityConfig {
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/refresh-token").permitAll()
-						.requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+						.requestMatchers("/api/admin/**", "/admin/**").authenticated()
 						.anyRequest().authenticated())
 				.exceptionHandling(exceptionHandling -> exceptionHandling
 						.authenticationEntryPoint((request, response, exception) -> {

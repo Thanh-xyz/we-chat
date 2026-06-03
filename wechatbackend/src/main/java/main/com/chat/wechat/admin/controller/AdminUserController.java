@@ -9,6 +9,7 @@ import main.com.chat.wechat.common.security.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,7 +21,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/admin/users")
+@RequestMapping({"/api/admin/users"})
 public class AdminUserController {
 	private final AdminUserService adminUserService;
 
@@ -47,6 +48,15 @@ public class AdminUserController {
 	@PutMapping("/{id}/status")
 	@PreAuthorize("hasAuthority('USER_STATUS_WRITE')")
 	public AdminUserResponse updateStatus(
+			@PathVariable UUID id,
+			@Valid @RequestBody UpdateUserStatusRequest request,
+			@AuthenticationPrincipal AuthenticatedUser actor) {
+		return adminUserService.updateStatus(id, request, actor);
+	}
+
+	@PatchMapping("/{id}/status")
+	@PreAuthorize("hasAuthority('USER_STATUS_WRITE')")
+	public AdminUserResponse patchStatus(
 			@PathVariable UUID id,
 			@Valid @RequestBody UpdateUserStatusRequest request,
 			@AuthenticationPrincipal AuthenticatedUser actor) {

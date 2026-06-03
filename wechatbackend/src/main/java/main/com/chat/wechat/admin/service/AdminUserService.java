@@ -7,8 +7,7 @@ import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.security.AuthenticatedUser;
-import main.com.chat.wechat.role.model.Role;
-import main.com.chat.wechat.role.repository.RoleRepository;
+import main.com.chat.wechat.role.service.UserRoleService;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -16,25 +15,23 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
 public class AdminUserService {
 	private final UserRepository userRepository;
-	private final RoleRepository roleRepository;
+	private final UserRoleService userRoleService;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final AuditLogService auditLogService;
 
 	public AdminUserService(
 			UserRepository userRepository,
-			RoleRepository roleRepository,
+			UserRoleService userRoleService,
 			RefreshTokenRepository refreshTokenRepository,
 			AuditLogService auditLogService) {
 		this.userRepository = userRepository;
-		this.roleRepository = roleRepository;
+		this.userRoleService = userRoleService;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.auditLogService = auditLogService;
 	}
@@ -43,14 +40,14 @@ public class AdminUserService {
 		int safeLimit = Math.min(Math.max(limit, 1), 100);
 		int safeOffset = Math.max(offset, 0);
 		return userRepository.findAllForAdmin(search, accountStatus, safeLimit, safeOffset).stream()
-				.map(user -> AdminUserResponse.from(user, roleRepository.findRoleCodesByUserId(user.id())))
+				.map(user -> AdminUserResponse.from(user, userRoleService.findRoleCodes(user.id())))
 				.toList();
 	}
 
 	public AdminUserResponse get(UUID id) {
 		User user = userRepository.findByIdIncludingDeleted(id)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
-		return AdminUserResponse.from(user, roleRepository.findRoleCodesByUserId(user.id()));
+		return AdminUserResponse.from(user, userRoleService.findRoleCodes(user.id()));
 	}
 
 	@Transactional
@@ -64,40 +61,29 @@ public class AdminUserService {
 		User updated = userRepository.updateAccountStatus(id, request.accountStatus(), now);
 		refreshTokenRepository.revokeAllForUser(id, now);
 		auditLogService.log(
-				"ADMIN_USER_STATUS_UPDATE",
+				auditActionForStatus(request.accountStatus()),
 				"USER",
 				id.toString(),
 				"{\"accountStatus\":\"" + before.accountStatus() + "\"}",
 				"{\"accountStatus\":\"" + updated.accountStatus() + "\"}");
-		return AdminUserResponse.from(updated, roleRepository.findRoleCodesByUserId(updated.id()));
+		return AdminUserResponse.from(updated, userRoleService.findRoleCodes(updated.id()));
 	}
 
 	@Transactional
 	public AdminUserResponse updateRoles(UUID id, UpdateUserRolesRequest request, AuthenticatedUser actor) {
 		User user = userRepository.findById(id)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
-		List<String> beforeRoles = roleRepository.findRoleCodesByUserId(user.id());
-		Set<UUID> roleIds = new LinkedHashSet<>();
-		for (String roleCode : request.roles()) {
-			if ("SUPER_ADMIN".equals(roleCode) && !actor.roles().contains("SUPER_ADMIN")) {
-				throw new ApiException(HttpStatus.FORBIDDEN, "Only SUPER_ADMIN can assign SUPER_ADMIN");
-			}
-			Role role = roleRepository.findByCode(roleCode)
-					.orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Role not found: " + roleCode));
-			roleIds.add(role.id());
-		}
-		Instant now = Instant.now();
-		roleRepository.replaceUserRoles(id, roleIds, actor.id(), now);
-		userRepository.incrementTokenVersion(id, now);
-		refreshTokenRepository.revokeAllForUser(id, now);
-		List<String> afterRoles = roleRepository.findRoleCodesByUserId(id);
-		auditLogService.log(
-				"ADMIN_USER_ROLES_UPDATE",
-				"USER",
-				id.toString(),
-				"{\"roles\":\"" + beforeRoles + "\"}",
-				"{\"roles\":\"" + afterRoles + "\"}");
-		User updated = userRepository.findById(id).orElseThrow();
+		List<String> afterRoles = userRoleService.replaceRoles(id, request.roles(), actor);
+		User updated = userRepository.findById(user.id()).orElseThrow();
 		return AdminUserResponse.from(updated, afterRoles);
+	}
+
+	private String auditActionForStatus(String accountStatus) {
+		return switch (accountStatus) {
+			case "BLOCKED" -> "ADMIN_USER_BLOCK";
+			case "ACTIVE" -> "ADMIN_USER_UNBLOCK";
+			case "DELETED" -> "ADMIN_USER_SOFT_DELETE";
+			default -> "ADMIN_USER_STATUS_UPDATE";
+		};
 	}
 }

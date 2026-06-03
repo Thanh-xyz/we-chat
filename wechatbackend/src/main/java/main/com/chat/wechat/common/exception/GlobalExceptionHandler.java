@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -33,6 +35,16 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(DuplicateKeyException.class)
 	public ResponseEntity<ErrorResponse> handleDuplicateKey(DuplicateKeyException exception, HttpServletRequest request) {
 		return build(HttpStatus.CONFLICT, "Resource already exists", request, null);
+	}
+
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+		return build(HttpStatus.FORBIDDEN, "Access denied", request, null);
+	}
+
+	@ExceptionHandler(AuthenticationException.class)
+	public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException exception, HttpServletRequest request) {
+		return build(HttpStatus.UNAUTHORIZED, "Authentication required", request, null);
 	}
 
 	@ExceptionHandler(Exception.class)

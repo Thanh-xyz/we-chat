@@ -11,8 +11,10 @@ import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.JwtToken;
 import main.com.chat.wechat.common.security.JwtTokenService;
+import main.com.chat.wechat.common.security.RbacProperties;
 import main.com.chat.wechat.role.model.Role;
 import main.com.chat.wechat.role.repository.RoleRepository;
+import main.com.chat.wechat.role.repository.UserRoleRepository;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
@@ -36,7 +38,9 @@ public class AuthService {
 	private final JwtProperties jwtProperties;
 	private final PasswordEncoder passwordEncoder;
 	private final RoleRepository roleRepository;
+	private final UserRoleRepository userRoleRepository;
 	private final AuditLogService auditLogService;
+	private final RbacProperties rbacProperties;
 
 	public AuthService(
 			UserRepository userRepository,
@@ -46,7 +50,9 @@ public class AuthService {
 			JwtProperties jwtProperties,
 			PasswordEncoder passwordEncoder,
 			RoleRepository roleRepository,
-			AuditLogService auditLogService) {
+			UserRoleRepository userRoleRepository,
+			AuditLogService auditLogService,
+			RbacProperties rbacProperties) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.refreshTokenGenerator = refreshTokenGenerator;
@@ -54,7 +60,9 @@ public class AuthService {
 		this.jwtProperties = jwtProperties;
 		this.passwordEncoder = passwordEncoder;
 		this.roleRepository = roleRepository;
+		this.userRoleRepository = userRoleRepository;
 		this.auditLogService = auditLogService;
+		this.rbacProperties = rbacProperties;
 	}
 
 	@Transactional
@@ -67,6 +75,7 @@ public class AuthService {
 		}
 
 		Instant now = Instant.now();
+		String defaultRoleCode = rbacProperties.defaultUserRole();
 		String displayName = StringUtils.hasText(request.displayName()) ? request.displayName().trim() : username;
 		User user = new User(
 				UUID.randomUUID(),
@@ -76,7 +85,7 @@ public class AuthService {
 				displayName,
 				null,
 				"OFFLINE",
-				"USER",
+				defaultRoleCode,
 				true,
 				"ACTIVE",
 				false,
@@ -89,9 +98,9 @@ public class AuthService {
 				now);
 
 		userRepository.save(user);
-		Role userRole = roleRepository.findByCode("USER")
-				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role USER is not configured"));
-		roleRepository.replaceUserRoles(user.id(), Set.of(userRole.id()), null, now);
+		Role userRole = roleRepository.findByCode(defaultRoleCode)
+				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role is not configured"));
+		userRoleRepository.replace(user.id(), Set.of(userRole.id()), null, now);
 		auditLogService.log("AUTH_REGISTER", "USER", user.id().toString(), null, "{\"username\":\"" + username + "\"}");
 		return issueTokens(user);
 	}
@@ -149,8 +158,8 @@ public class AuthService {
 	}
 
 	private AuthResponse issueTokens(User user, GeneratedRefreshToken generatedRefreshToken) {
-		List<String> roles = roleRepository.findRoleCodesByUserId(user.id());
-		List<String> permissions = roleRepository.findPermissionCodesByUserId(user.id());
+		List<String> roles = userRoleRepository.findRoleCodesByUserId(user.id());
+		List<String> permissions = userRoleRepository.findPermissionCodesByUserId(user.id());
 		JwtToken accessToken = jwtTokenService.createAccessToken(user, roles, permissions);
 		return new AuthResponse(
 				accessToken.value(),

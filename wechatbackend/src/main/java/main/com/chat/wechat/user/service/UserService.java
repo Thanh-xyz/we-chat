@@ -1,7 +1,7 @@
 package main.com.chat.wechat.user.service;
 
 import main.com.chat.wechat.common.exception.ApiException;
-import main.com.chat.wechat.role.repository.RoleRepository;
+import main.com.chat.wechat.role.service.UserRoleService;
 import main.com.chat.wechat.user.dto.UpdateProfileRequest;
 import main.com.chat.wechat.user.dto.UserResponse;
 import main.com.chat.wechat.user.model.User;
@@ -17,16 +17,16 @@ import java.util.UUID;
 @Service
 public class UserService {
 	private final UserRepository userRepository;
-	private final RoleRepository roleRepository;
+	private final UserRoleService userRoleService;
 
-	public UserService(UserRepository userRepository, RoleRepository roleRepository) {
+	public UserService(UserRepository userRepository, UserRoleService userRoleService) {
 		this.userRepository = userRepository;
-		this.roleRepository = roleRepository;
+		this.userRoleService = userRoleService;
 	}
 
 	public UserResponse me(UUID userId) {
 		User user = findActiveUser(userId);
-		return UserResponse.from(user, roleRepository.findRoleCodesByUserId(user.id()));
+		return UserResponse.from(user, userRoleService.findRoleCodes(user.id()));
 	}
 
 	@Transactional
@@ -39,7 +39,7 @@ public class UserService {
 				? request.avatarUrl().trim()
 				: user.avatarUrl();
 		User updated = userRepository.updateProfile(user.id(), displayName, avatarUrl, Instant.now());
-		return UserResponse.from(updated, roleRepository.findRoleCodesByUserId(updated.id()));
+		return UserResponse.from(updated, userRoleService.findRoleCodes(updated.id()));
 	}
 
 	private User findActiveUser(UUID userId) {
