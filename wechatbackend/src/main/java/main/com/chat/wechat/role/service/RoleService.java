@@ -5,7 +5,9 @@ import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.role.dto.RoleRequest;
 import main.com.chat.wechat.role.dto.RoleResponse;
 import main.com.chat.wechat.role.model.Role;
+import main.com.chat.wechat.role.repository.RolePermissionRepository;
 import main.com.chat.wechat.role.repository.RoleRepository;
+import main.com.chat.wechat.role.repository.UserRoleRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,16 +20,24 @@ import java.util.UUID;
 @Service
 public class RoleService {
 	private final RoleRepository roleRepository;
+	private final RolePermissionRepository rolePermissionRepository;
+	private final UserRoleRepository userRoleRepository;
 	private final AuditLogService auditLogService;
 
-	public RoleService(RoleRepository roleRepository, AuditLogService auditLogService) {
+	public RoleService(
+			RoleRepository roleRepository,
+			RolePermissionRepository rolePermissionRepository,
+			UserRoleRepository userRoleRepository,
+			AuditLogService auditLogService) {
 		this.roleRepository = roleRepository;
+		this.rolePermissionRepository = rolePermissionRepository;
+		this.userRoleRepository = userRoleRepository;
 		this.auditLogService = auditLogService;
 	}
 
 	public List<RoleResponse> list() {
 		return roleRepository.findAll().stream()
-				.map(role -> RoleResponse.from(role, roleRepository.findPermissionsByRoleId(role.id())))
+				.map(role -> RoleResponse.from(role, rolePermissionRepository.findPermissionsByRoleId(role.id())))
 				.toList();
 	}
 
@@ -48,7 +58,7 @@ public class RoleService {
 				now,
 				now));
 		auditLogService.log("ADMIN_ROLE_CREATE", "ROLE", role.id().toString(), null, "{\"code\":\"" + role.code() + "\"}");
-		return RoleResponse.from(role, roleRepository.findPermissionsByRoleId(role.id()));
+		return RoleResponse.from(role, rolePermissionRepository.findPermissionsByRoleId(role.id()));
 	}
 
 	@Transactional
@@ -71,7 +81,7 @@ public class RoleService {
 				id.toString(),
 				"{\"code\":\"" + before.code() + "\"}",
 				"{\"code\":\"" + updated.code() + "\"}");
-		return RoleResponse.from(updated, roleRepository.findPermissionsByRoleId(updated.id()));
+		return RoleResponse.from(updated, rolePermissionRepository.findPermissionsByRoleId(updated.id()));
 	}
 
 	@Transactional
@@ -81,7 +91,7 @@ public class RoleService {
 		if (role.systemRole()) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "System roles cannot be deleted");
 		}
-		if (roleRepository.isRoleAssigned(id)) {
+		if (userRoleRepository.isRoleAssigned(id)) {
 			throw new ApiException(HttpStatus.CONFLICT, "Role is assigned to users");
 		}
 		roleRepository.softDelete(id, Instant.now());
