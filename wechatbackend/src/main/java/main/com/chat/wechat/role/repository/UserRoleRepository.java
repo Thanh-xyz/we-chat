@@ -85,6 +85,20 @@ public class UserRoleRepository {
 		return count != null && count > 0;
 	}
 
+	public int countActiveUsersByRoleCode(String roleCode) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from user_roles ur
+				join roles r on r.id = ur.role_id
+				join users u on u.id = ur.user_id
+				where r.code = ?
+				  and r.deleted_at is null
+				  and u.deleted_at is null
+				  and u.account_status = 'ACTIVE'
+				""", Integer.class, roleCode);
+		return count == null ? 0 : count;
+	}
+
 	private RowMapper<UserRole> rowMapper() {
 		return (rs, rowNum) -> mapUserRole(rs);
 	}

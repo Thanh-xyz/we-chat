@@ -57,6 +57,7 @@ public class AdminUserService {
 		}
 		User before = userRepository.findByIdIncludingDeleted(id)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+		userRoleService.requireCanManageTargetSuperAdmin(id, actor);
 		Instant now = Instant.now();
 		User updated = userRepository.updateAccountStatus(id, request.accountStatus(), now);
 		refreshTokenRepository.revokeAllForUser(id, now);
@@ -73,6 +74,7 @@ public class AdminUserService {
 	public AdminUserResponse updateRoles(UUID id, UpdateUserRolesRequest request, AuthenticatedUser actor) {
 		User user = userRepository.findById(id)
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+		userRoleService.requireCanManageTargetSuperAdmin(id, actor);
 		List<String> afterRoles = userRoleService.replaceRoles(id, request.roles(), actor);
 		User updated = userRepository.findById(user.id()).orElseThrow();
 		return AdminUserResponse.from(updated, afterRoles);

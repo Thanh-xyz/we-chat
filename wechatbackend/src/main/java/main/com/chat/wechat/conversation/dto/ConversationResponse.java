@@ -15,10 +15,27 @@ public record ConversationResponse(
 		UUID lastMessageId,
 		Instant lastMessageAt,
 		List<UUID> memberIds,
+		int unreadCount,
+		boolean muted,
+		Instant mutedUntil,
+		Instant pinnedAt,
+		Instant archivedAt,
 		Instant createdAt,
 		Instant updatedAt) {
 
 	public static ConversationResponse from(Conversation conversation, List<UUID> memberIds) {
+		return from(conversation, memberIds, 0);
+	}
+
+	public static ConversationResponse from(Conversation conversation, List<UUID> memberIds, int unreadCount) {
+		return from(conversation, memberIds, unreadCount, null);
+	}
+
+	public static ConversationResponse from(
+			Conversation conversation,
+			List<UUID> memberIds,
+			int unreadCount,
+			main.com.chat.wechat.conversation.model.ConversationMember currentMember) {
 		return new ConversationResponse(
 				conversation.id(),
 				conversation.type(),
@@ -28,6 +45,11 @@ public record ConversationResponse(
 				conversation.lastMessageId(),
 				conversation.lastMessageAt(),
 				memberIds,
+				unreadCount,
+				currentMember != null && currentMember.muted(),
+				currentMember == null ? null : currentMember.mutedUntil(),
+				currentMember == null ? null : currentMember.pinnedAt(),
+				currentMember == null ? null : currentMember.archivedAt(),
 				conversation.createdAt(),
 				conversation.updatedAt());
 	}

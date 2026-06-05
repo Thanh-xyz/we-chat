@@ -1,16 +1,20 @@
 package main.com.chat.wechat.message.dto;
 
-import jakarta.validation.constraints.Pattern;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 
+import java.util.List;
 import java.util.UUID;
 
 public record CreateMessageRequest(
 		@Size(max = 10000)
 		String content,
 
-		@Pattern(regexp = "TEXT|IMAGE|FILE|VOICE|SYSTEM")
 		String messageType,
 
-		UUID replyToMessageId) {
+		UUID replyToMessageId,
+
+		@Valid
+		@Size(max = 10)
+		List<AttachmentMetadataRequest> attachments) {
 }

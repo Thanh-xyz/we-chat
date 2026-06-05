@@ -11,6 +11,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,15 +58,56 @@ public class ConversationRepository {
 		}
 	}
 
-	public List<Conversation> findByMember(UUID userId, int limit, int offset) {
+	public List<Conversation> findByMember(UUID userId, boolean includeArchived, int limit, int offset) {
 		return jdbcTemplate.query("""
 				select c.*
 				from conversations c
 				join conversation_members cm on cm.conversation_id = c.id
-				where cm.user_id = ? and cm.left_at is null and c.deleted_at is null
-				order by c.last_message_at desc nulls last, c.updated_at desc
+				where cm.user_id = ?
+				  and cm.left_at is null
+				  and c.deleted_at is null
+				  and (? = true or cm.archived_at is null)
+				order by cm.pinned_at desc nulls last, c.last_message_at desc nulls last, c.updated_at desc
 				limit ? offset ?
-				""", rowMapper(), userId, limit, offset);
+				""", rowMapper(), userId, includeArchived, limit, offset);
+	}
+
+	public List<Conversation> searchByMember(UUID userId, String query, boolean includeArchived, int limit, int offset) {
+		if (query == null || query.isBlank()) {
+			return Collections.emptyList();
+		}
+		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
+		return jdbcTemplate.query("""
+				select id, type, name, avatar_url, created_by, last_message_id,
+				       last_message_at, deleted_at, created_at, updated_at
+				from (
+				    select distinct on (c.id)
+				           c.*,
+				           actor_member.pinned_at as actor_pinned_at
+				    from conversations c
+				    join conversation_members actor_member
+				        on actor_member.conversation_id = c.id
+				       and actor_member.user_id = ?
+				       and actor_member.left_at is null
+				    left join conversation_members cm
+				        on cm.conversation_id = c.id
+				       and cm.left_at is null
+				    left join users u on u.id = cm.user_id
+				    where c.deleted_at is null
+				      and (? = true or actor_member.archived_at is null)
+				      and (
+				          (c.type = 'GROUP' and lower(coalesce(c.name, '')) like ?)
+				          or lower(coalesce(u.username, '')) like ?
+				          or lower(coalesce(u.email, '')) like ?
+				          or lower(coalesce(u.display_name, '')) like ?
+				      )
+				    order by c.id, actor_member.pinned_at desc nulls last,
+				             c.last_message_at desc nulls last, c.updated_at desc
+				) search_result
+				order by actor_pinned_at desc nulls last,
+				         last_message_at desc nulls last, updated_at desc
+				limit ? offset ?
+				""", rowMapper(), userId, includeArchived, normalizedQuery, normalizedQuery, normalizedQuery, normalizedQuery, limit, offset);
 	}
 
 	public Optional<Conversation> findDirectByPair(UUID userLowId, UUID userHighId) {
@@ -106,6 +148,22 @@ public class ConversationRepository {
 				set last_message_id = ?, last_message_at = ?, updated_at = ?
 				where id = ? and deleted_at is null
 				""", messageId, Timestamp.from(lastMessageAt), Timestamp.from(lastMessageAt), conversationId);
+	}
+
+	public Optional<Conversation> updateGroup(UUID conversationId, String name, String avatarUrl, Instant updatedAt) {
+		try {
+			Conversation conversation = jdbcTemplate.queryForObject("""
+					update conversations
+					set name = coalesce(?, name),
+					    avatar_url = coalesce(?, avatar_url),
+					    updated_at = ?
+					where id = ? and type = 'GROUP' and deleted_at is null
+					returning *
+					""", rowMapper(), name, avatarUrl, Timestamp.from(updatedAt), conversationId);
+			return Optional.ofNullable(conversation);
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
 	}
 
 	private RowMapper<Conversation> rowMapper() {

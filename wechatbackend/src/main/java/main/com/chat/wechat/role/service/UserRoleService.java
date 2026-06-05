@@ -56,6 +56,8 @@ public class UserRoleService {
 	@Transactional
 	public List<String> assignRole(UUID userId, String roleCode, AuthenticatedUser actor) {
 		User user = findUser(userId);
+		requireNotSelfRoleChange(user.id(), actor);
+		requireCanManageTargetSuperAdmin(user.id(), actor);
 		Role role = findAssignableRole(roleCode, actor);
 		List<String> beforeRoles = findRoleCodes(user.id());
 		Instant now = Instant.now();
@@ -67,8 +69,11 @@ public class UserRoleService {
 	@Transactional
 	public List<String> removeRole(UUID userId, String roleCode, AuthenticatedUser actor) {
 		User user = findUser(userId);
+		requireNotSelfRoleChange(user.id(), actor);
+		requireCanManageTargetSuperAdmin(user.id(), actor);
 		Role role = findAssignableRole(roleCode, actor);
 		List<String> beforeRoles = findRoleCodes(user.id());
+		requireNotRemovingLastSuperAdmin(beforeRoles, Set.of(normalizeRoleCode(roleCode)));
 		Instant now = Instant.now();
 		userRoleRepository.remove(user.id(), role.id());
 		afterRoleChange(user.id(), now, "ADMIN_USER_ROLE_REMOVE", beforeRoles, findRoleCodes(user.id()));
@@ -78,11 +83,17 @@ public class UserRoleService {
 	@Transactional
 	public List<String> replaceRoles(UUID userId, Set<String> roleCodes, AuthenticatedUser actor) {
 		User user = findUser(userId);
+		requireNotSelfRoleChange(user.id(), actor);
+		requireCanManageTargetSuperAdmin(user.id(), actor);
 		List<String> beforeRoles = findRoleCodes(user.id());
 		Set<UUID> roleIds = new LinkedHashSet<>();
+		Set<String> normalizedRoleCodes = new LinkedHashSet<>();
 		for (String roleCode : roleCodes) {
-			roleIds.add(findAssignableRole(roleCode, actor).id());
+			String normalizedRoleCode = normalizeRoleCode(roleCode);
+			normalizedRoleCodes.add(normalizedRoleCode);
+			roleIds.add(findAssignableRole(normalizedRoleCode, actor).id());
 		}
+		requireNotRemovingLastSuperAdmin(beforeRoles, removedRoles(beforeRoles, normalizedRoleCodes));
 		Instant now = Instant.now();
 		userRoleRepository.replace(user.id(), roleIds, actor.id(), now);
 		List<String> afterRoles = findRoleCodes(user.id());
@@ -103,6 +114,38 @@ public class UserRoleService {
 		}
 		return roleRepository.findByCode(normalizedRoleCode)
 				.orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Role not found: " + normalizedRoleCode));
+	}
+
+	public void requireCanManageTargetSuperAdmin(UUID targetUserId, AuthenticatedUser actor) {
+		List<String> targetRoles = findRoleCodes(targetUserId);
+		if (targetRoles.contains(rbacProperties.superAdminRole()) && !isSuperAdmin(actor)) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "Only super admin can manage super admin users");
+		}
+	}
+
+	private void requireNotSelfRoleChange(UUID targetUserId, AuthenticatedUser actor) {
+		if (targetUserId.equals(actor.id())) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "Admins cannot change their own roles");
+		}
+	}
+
+	private void requireNotRemovingLastSuperAdmin(List<String> beforeRoles, Set<String> removedRoleCodes) {
+		String superAdminRole = rbacProperties.superAdminRole();
+		if (beforeRoles.contains(superAdminRole)
+				&& removedRoleCodes.contains(superAdminRole)
+				&& userRoleRepository.countActiveUsersByRoleCode(superAdminRole) <= 1) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "Cannot remove the last active super admin role");
+		}
+	}
+
+	private Set<String> removedRoles(List<String> beforeRoles, Set<String> afterRoles) {
+		Set<String> removedRoles = new LinkedHashSet<>(beforeRoles);
+		removedRoles.removeAll(afterRoles);
+		return removedRoles;
+	}
+
+	private boolean isSuperAdmin(AuthenticatedUser actor) {
+		return actor.roles().contains(rbacProperties.superAdminRole());
 	}
 
 	private void afterRoleChange(UUID userId, Instant now, String action, List<String> beforeRoles, List<String> afterRoles) {
