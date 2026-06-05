@@ -12,6 +12,8 @@ public record ConversationMember(
 		Instant leftAt,
 		Instant mutedUntil,
 		Instant pinnedAt,
+		Instant archivedAt,
 		UUID lastReadMessageId,
+		Instant readAt,
 		boolean muted) {
 }

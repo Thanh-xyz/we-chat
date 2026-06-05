@@ -13,6 +13,8 @@ public record Message(
 		Instant editedAt,
 		Instant deletedAt,
 		Instant recalledAt,
+		boolean edited,
+		boolean recalled,
 		Instant createdAt,
 		Instant updatedAt) {
 }

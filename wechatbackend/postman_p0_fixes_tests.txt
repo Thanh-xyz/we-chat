@@ -1,0 +1,203 @@
+Postman tests for Phase P0 fixes
+
+Prerequisites
+- Set baseUrl, userAccessToken, adminAccessToken, superAdminAccessToken.
+- Set groupConversationId, directConversationId, archivedConversationId, targetUserId, superAdminUserId.
+- All requests use JSON body and Authorization: Bearer <token> unless public.
+
+1. P0-1 Search group conversation
+GET {{baseUrl}}/api/conversations/search?q=project&limit=20&offset=0
+Authorization: Bearer {{userAccessToken}}
+Expected:
+- 200 OK
+- Response is an array.
+- No BadSqlGrammarException.
+- No duplicate id in response.
+
+Postman test script:
+const ids = pm.response.json().map(item => item.id);
+pm.test("search group returns 200", () => pm.response.to.have.status(200));
+pm.test("no duplicate conversation", () => pm.expect(new Set(ids).size).to.eql(ids.length));
+
+2. P0-1 Search direct conversation by member name/email
+GET {{baseUrl}}/api/conversations/search?q={{directMemberEmail}}&limit=20&offset=0
+Authorization: Bearer {{userAccessToken}}
+Expected:
+- 200 OK
+- Response is an array.
+- Direct conversation can appear once.
+
+Postman test script:
+const ids = pm.response.json().map(item => item.id);
+pm.test("search direct returns 200", () => pm.response.to.have.status(200));
+pm.test("no duplicate direct conversation", () => pm.expect(new Set(ids).size).to.eql(ids.length));
+
+3. P0-1 Search no result
+GET {{baseUrl}}/api/conversations/search?q=__no_result_{{$timestamp}}&limit=20&offset=0
+Authorization: Bearer {{userAccessToken}}
+Expected:
+- 200 OK
+- []
+
+Postman test script:
+pm.test("search no result returns 200", () => pm.response.to.have.status(200));
+pm.test("empty array", () => pm.expect(pm.response.json()).to.eql([]));
+
+4. P0-1 Search archived excluded by default
+GET {{baseUrl}}/api/conversations/search?q={{archivedConversationName}}&limit=20&offset=0
+Authorization: Bearer {{userAccessToken}}
+Expected:
+- 200 OK
+- archivedConversationId is not present.
+
+Postman test script:
+const ids = pm.response.json().map(item => item.id);
+pm.test("archived excluded by default", () => pm.expect(ids).to.not.include(pm.environment.get("archivedConversationId")));
+
+5. P0-1 Search archived included
+GET {{baseUrl}}/api/conversations/search?q={{archivedConversationName}}&includeArchived=true&limit=20&offset=0
+Authorization: Bearer {{userAccessToken}}
+Expected:
+- 200 OK
+- archivedConversationId can be present if q matches.
+
+Postman test script:
+pm.test("archived search includeArchived returns 200", () => pm.response.to.have.status(200));
+
+6. P0-2 Block SYSTEM message exact uppercase
+POST {{baseUrl}}/api/conversations/{{groupConversationId}}/messages
+Authorization: Bearer {{userAccessToken}}
+Body:
+{
+  "messageType": "SYSTEM",
+  "content": "fake system message"
+}
+Expected:
+- 403 Forbidden
+- message: System messages can only be created by backend workflow
+
+Postman test script:
+pm.test("SYSTEM is forbidden", () => pm.response.to.have.status(403));
+pm.test("clear error message", () => pm.expect(pm.response.text()).to.include("System messages can only be created by backend workflow"));
+
+7. P0-2 Block SYSTEM message lowercase bypass
+POST {{baseUrl}}/api/conversations/{{groupConversationId}}/messages
+Authorization: Bearer {{userAccessToken}}
+Body:
+{
+  "messageType": "system",
+  "content": "fake system message"
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("lowercase system is forbidden", () => pm.response.to.have.status(403));
+
+8. P0-2 Block SYSTEM message trim bypass
+POST {{baseUrl}}/api/conversations/{{groupConversationId}}/messages
+Authorization: Bearer {{userAccessToken}}
+Body:
+{
+  "messageType": " System ",
+  "content": "fake system message"
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("trimmed system is forbidden", () => pm.response.to.have.status(403));
+
+9. P0-2 Allow normal TEXT message
+POST {{baseUrl}}/api/conversations/{{groupConversationId}}/messages
+Authorization: Bearer {{userAccessToken}}
+Body:
+{
+  "messageType": "TEXT",
+  "content": "normal message"
+}
+Expected:
+- 200 OK
+- messageType: TEXT
+
+Postman test script:
+pm.test("TEXT still works", () => pm.response.to.have.status(200));
+pm.test("message type TEXT", () => pm.expect(pm.response.json().messageType).to.eql("TEXT"));
+
+10. P0-3 ADMIN cannot assign SUPER_ADMIN
+PUT {{baseUrl}}/api/admin/users/{{targetUserId}}/roles
+Authorization: Bearer {{adminAccessToken}}
+Body:
+{
+  "roles": ["USER", "SUPER_ADMIN"]
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("admin cannot assign SUPER_ADMIN", () => pm.response.to.have.status(403));
+
+11. P0-3 ADMIN cannot change own roles
+PUT {{baseUrl}}/api/admin/users/{{adminUserId}}/roles
+Authorization: Bearer {{adminAccessToken}}
+Body:
+{
+  "roles": ["USER"]
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("admin cannot change own roles", () => pm.response.to.have.status(403));
+
+12. P0-4 ADMIN cannot block SUPER_ADMIN
+PATCH {{baseUrl}}/api/admin/users/{{superAdminUserId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Body:
+{
+  "accountStatus": "BLOCKED"
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("admin cannot block super admin", () => pm.response.to.have.status(403));
+
+13. P0-4 ADMIN cannot delete SUPER_ADMIN
+PATCH {{baseUrl}}/api/admin/users/{{superAdminUserId}}/status
+Authorization: Bearer {{adminAccessToken}}
+Body:
+{
+  "accountStatus": "DELETED"
+}
+Expected:
+- 403 Forbidden
+
+Postman test script:
+pm.test("admin cannot delete super admin", () => pm.response.to.have.status(403));
+
+14. P0-3 SUPER_ADMIN can manage another SUPER_ADMIN when not removing the last active one
+PUT {{baseUrl}}/api/admin/users/{{secondSuperAdminUserId}}/roles
+Authorization: Bearer {{superAdminAccessToken}}
+Body:
+{
+  "roles": ["USER", "SUPER_ADMIN"]
+}
+Expected:
+- 200 OK if secondSuperAdminUserId exists and caller is SUPER_ADMIN.
+
+Postman test script:
+pm.test("super admin can manage another super admin", () => pm.response.to.have.status(200));
+
+15. P0-3 Cannot remove the last active SUPER_ADMIN role
+PUT {{baseUrl}}/api/admin/users/{{onlySuperAdminUserId}}/roles
+Authorization: Bearer {{superAdminAccessToken}}
+Body:
+{
+  "roles": ["USER"]
+}
+Expected:
+- 403 Forbidden when onlySuperAdminUserId is the only active SUPER_ADMIN.
+
+Postman test script:
+pm.test("cannot remove last active super admin", () => pm.response.to.have.status(403));
