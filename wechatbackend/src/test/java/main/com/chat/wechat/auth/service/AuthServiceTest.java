@@ -2,7 +2,8 @@ package main.com.chat.wechat.auth.service;
 
 import main.com.chat.wechat.auth.dto.AuthResponse;
 import main.com.chat.wechat.auth.dto.LoginRequest;
-import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
+import main.com.chat.wechat.auth.repository.EmailVerificationTokenRepository;
+import main.com.chat.wechat.auth.repository.PasswordResetTokenRepository;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
@@ -22,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -45,7 +47,13 @@ class AuthServiceTest {
 	private UserRepository userRepository;
 
 	@Mock
-	private RefreshTokenRepository refreshTokenRepository;
+	private RefreshTokenService refreshTokenService;
+
+	@Mock
+	private PasswordResetTokenRepository passwordResetTokenRepository;
+
+	@Mock
+	private EmailVerificationTokenRepository emailVerificationTokenRepository;
 
 	@Mock
 	private RefreshTokenGenerator refreshTokenGenerator;
@@ -55,6 +63,12 @@ class AuthServiceTest {
 
 	@Mock
 	private PasswordEncoder passwordEncoder;
+
+	@Mock
+	private PasswordPolicyValidator passwordPolicyValidator;
+
+	@Mock
+	private AuthEmailService authEmailService;
 
 	@Mock
 	private RoleRepository roleRepository;
@@ -74,7 +88,9 @@ class AuthServiceTest {
 	void setUp() {
 		authService = new AuthService(
 				userRepository,
-				refreshTokenRepository,
+				refreshTokenService,
+				passwordResetTokenRepository,
+				emailVerificationTokenRepository,
 				refreshTokenGenerator,
 				jwtTokenService,
 				new JwtProperties(
@@ -83,12 +99,14 @@ class AuthServiceTest {
 						Duration.ofMinutes(15),
 						Duration.ofDays(30)),
 				passwordEncoder,
+				passwordPolicyValidator,
+				authEmailService,
 				roleRepository,
 				userRoleRepository,
 				auditLogService,
 				auditJsonWriter,
 				new RbacProperties("USER", "SUPER_ADMIN"),
-				new LoginSecurityProperties(5, Duration.ofMinutes(15)));
+				new LoginSecurityProperties(5, Duration.ofMinutes(15), false, Duration.ofDays(1), Duration.ofMinutes(30), Duration.ofMinutes(5)));
 	}
 
 	@Test
@@ -100,7 +118,7 @@ class AuthServiceTest {
 		when(userRepository.recordLoginFailure(eq(USER_ID), any(Instant.class), eq(5), any(Instant.class)))
 				.thenReturn(lockedUser);
 
-		assertThatThrownBy(() -> authService.login(new LoginRequest("user@example.com", "bad-password")))
+		assertThatThrownBy(() -> authService.login(new LoginRequest("user@example.com", "bad-password"), request()))
 				.isInstanceOfSatisfying(ApiException.class, exception ->
 						assertThat(exception.status()).isEqualTo(HttpStatus.LOCKED));
 	}
@@ -110,7 +128,7 @@ class AuthServiceTest {
 		User lockedUser = activeUser(Instant.now().plus(Duration.ofMinutes(10)));
 		when(userRepository.findByUsernameOrEmail("user@example.com")).thenReturn(Optional.of(lockedUser));
 
-		assertThatThrownBy(() -> authService.login(new LoginRequest("user@example.com", "correct-password")))
+		assertThatThrownBy(() -> authService.login(new LoginRequest("user@example.com", "correct-password"), request()))
 				.isInstanceOfSatisfying(ApiException.class, exception ->
 						assertThat(exception.status()).isEqualTo(HttpStatus.LOCKED));
 
@@ -122,18 +140,21 @@ class AuthServiceTest {
 		User user = activeUser(Instant.now().minus(Duration.ofMinutes(1)));
 		when(userRepository.findByUsernameOrEmail("user@example.com")).thenReturn(Optional.of(user));
 		when(passwordEncoder.matches("correct-password", user.passwordHash())).thenReturn(true);
-		when(refreshTokenGenerator.generate()).thenReturn("raw-refresh-token");
-		when(refreshTokenGenerator.hash("raw-refresh-token")).thenReturn("refresh-token-hash");
+		when(refreshTokenService.create(eq(USER_ID), any(Instant.class), any()))
+				.thenReturn(new RefreshTokenService.GeneratedRefreshToken(
+						"raw-refresh-token",
+						"refresh-token-hash",
+						Instant.now().plus(Duration.ofDays(30))));
 		when(userRoleRepository.findRoleCodesByUserId(USER_ID)).thenReturn(List.of("USER"));
 		when(userRoleRepository.findPermissionCodesByUserId(USER_ID)).thenReturn(List.of("CONVERSATION_READ"));
 		when(jwtTokenService.createAccessToken(eq(user), eq(List.of("USER")), eq(List.of("CONVERSATION_READ"))))
 				.thenReturn(new JwtToken("access-token", Instant.now().plus(Duration.ofMinutes(15))));
 
-		AuthResponse response = authService.login(new LoginRequest("user@example.com", "correct-password"));
+		AuthResponse response = authService.login(new LoginRequest("user@example.com", "correct-password"), request());
 
 		assertThat(response.accessToken()).isEqualTo("access-token");
 		verify(userRepository).recordLoginSuccess(eq(USER_ID), any(Instant.class));
-		verify(refreshTokenRepository).save(any());
+		verify(refreshTokenService).create(eq(USER_ID), any(Instant.class), any());
 	}
 
 	private User activeUser(Instant lockedUntil) {
@@ -157,5 +178,12 @@ class AuthServiceTest {
 				null,
 				now,
 				now);
+	}
+
+	private MockHttpServletRequest request() {
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setRemoteAddr("127.0.0.1");
+		request.addHeader("User-Agent", "JUnit");
+		return request;
 	}
 }

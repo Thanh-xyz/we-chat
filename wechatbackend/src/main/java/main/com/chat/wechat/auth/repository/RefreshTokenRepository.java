@@ -23,8 +23,11 @@ public class RefreshTokenRepository {
 
 	public RefreshToken save(RefreshToken refreshToken) {
 		jdbcTemplate.update("""
-				insert into refresh_tokens (id, user_id, token_hash, expires_at, revoked_at, created_at, replaced_by_token_hash)
-				values (?, ?, ?, ?, ?, ?, ?)
+				insert into refresh_tokens (
+				    id, user_id, token_hash, expires_at, revoked_at, created_at,
+				    replaced_by_token, device_info, ip_address
+				)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 				refreshToken.id(),
 				refreshToken.userId(),
@@ -32,7 +35,9 @@ public class RefreshTokenRepository {
 				Timestamp.from(refreshToken.expiresAt()),
 				toTimestamp(refreshToken.revokedAt()),
 				Timestamp.from(refreshToken.createdAt()),
-				refreshToken.replacedByTokenHash());
+				refreshToken.replacedByToken(),
+				refreshToken.deviceInfo(),
+				refreshToken.ipAddress());
 		return refreshToken;
 	}
 
@@ -52,7 +57,7 @@ public class RefreshTokenRepository {
 	public void revoke(String tokenHash, Instant revokedAt, String replacedByTokenHash) {
 		jdbcTemplate.update("""
 				update refresh_tokens
-				set revoked_at = ?, replaced_by_token_hash = ?
+				set revoked_at = ?, replaced_by_token = ?
 				where token_hash = ? and revoked_at is null
 				""", Timestamp.from(revokedAt), replacedByTokenHash, tokenHash);
 	}
@@ -77,7 +82,9 @@ public class RefreshTokenRepository {
 				toInstant(rs, "expires_at"),
 				toInstant(rs, "revoked_at"),
 				toInstant(rs, "created_at"),
-				rs.getString("replaced_by_token_hash"));
+				rs.getString("replaced_by_token"),
+				rs.getString("device_info"),
+				rs.getString("ip_address"));
 	}
 
 	private Timestamp toTimestamp(Instant instant) {

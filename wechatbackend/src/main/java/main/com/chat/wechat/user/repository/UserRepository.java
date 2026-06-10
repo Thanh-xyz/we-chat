@@ -61,6 +61,24 @@ public class UserRepository {
 		return count != null && count > 0;
 	}
 
+	public boolean existsByUsername(String username) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from users
+				where lower(username) = lower(?)
+				""", Integer.class, username);
+		return count != null && count > 0;
+	}
+
+	public boolean existsByEmail(String email) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from users
+				where lower(email) = lower(?)
+				""", Integer.class, email);
+		return count != null && count > 0;
+	}
+
 	public Optional<User> findByUsernameOrEmail(String identifier) {
 		try {
 			User user = jdbcTemplate.queryForObject("""
@@ -70,6 +88,21 @@ public class UserRepository {
 					  and deleted_at is null
 					limit 1
 					""", rowMapper(), identifier, identifier);
+			return Optional.ofNullable(user);
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public Optional<User> findByEmail(String email) {
+		try {
+			User user = jdbcTemplate.queryForObject("""
+					select *
+					from users
+					where lower(email) = lower(?)
+					  and deleted_at is null
+					limit 1
+					""", rowMapper(), email);
 			return Optional.ofNullable(user);
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
@@ -163,6 +196,26 @@ public class UserRepository {
 				update users
 				set token_version = token_version + 1, updated_at = ?
 				where id = ?
+				""", Timestamp.from(updatedAt), id);
+	}
+
+	public void updatePasswordAndIncrementTokenVersion(UUID id, String passwordHash, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update users
+				set password_hash = ?,
+				    token_version = token_version + 1,
+				    failed_login_count = 0,
+				    locked_until = null,
+				    updated_at = ?
+				where id = ?
+				""", passwordHash, Timestamp.from(updatedAt), id);
+	}
+
+	public void markEmailVerified(UUID id, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update users
+				set email_verified = true, updated_at = ?
+				where id = ? and deleted_at is null
 				""", Timestamp.from(updatedAt), id);
 	}
 

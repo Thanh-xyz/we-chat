@@ -15,6 +15,7 @@ class RateLimitFilterTest {
 				new RateLimitProperties.Limit(1, 1),
 				new RateLimitProperties.Limit(20, 1),
 				new RateLimitProperties.Limit(5, 1),
+				new RateLimitProperties.Limit(3, 15),
 				new RateLimitProperties.Limit(60, 1),
 				new RateLimitProperties.Limit(20, 1));
 		RateLimitFilter filter = new RateLimitFilter(new InMemoryRateLimiter(), properties, new ObjectMapper());
