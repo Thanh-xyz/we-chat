@@ -2,6 +2,7 @@ package main.com.chat.wechat.role.repository;
 
 import main.com.chat.wechat.role.model.UserRole;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
@@ -9,7 +10,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +43,25 @@ public class UserRoleRepository {
 				where ur.user_id = ? and r.deleted_at is null
 				order by r.code
 				""", String.class, userId);
+	}
+
+	public Map<UUID, List<String>> findRoleCodesByUserIds(List<UUID> userIds) {
+		if (userIds == null || userIds.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<UUID, List<String>> result = new LinkedHashMap<>();
+		userIds.forEach(userId -> result.put(userId, new ArrayList<>()));
+		jdbcTemplate.query("""
+				select ur.user_id, r.code
+				from user_roles ur
+				join roles r on r.id = ur.role_id
+				where ur.user_id in (%s) and r.deleted_at is null
+				order by ur.user_id, r.code
+				""".formatted(placeholders(userIds.size())),
+				(RowCallbackHandler) rs -> result.computeIfAbsent(rs.getObject("user_id", UUID.class), ignored -> new ArrayList<>())
+						.add(rs.getString("code")),
+				userIds.toArray());
+		return result;
 	}
 
 	public List<String> findPermissionCodesByUserId(UUID userId) {
@@ -114,5 +138,9 @@ public class UserRoleRepository {
 	private Instant toInstant(ResultSet rs, String column) throws SQLException {
 		Timestamp timestamp = rs.getTimestamp(column);
 		return timestamp == null ? null : timestamp.toInstant();
+	}
+
+	private String placeholders(int count) {
+		return String.join(",", Collections.nCopies(count, "?"));
 	}
 }

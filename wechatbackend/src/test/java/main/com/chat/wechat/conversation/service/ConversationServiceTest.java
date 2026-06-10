@@ -1,5 +1,6 @@
 package main.com.chat.wechat.conversation.service;
 
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.dto.ConversationResponse;
@@ -60,6 +61,9 @@ class ConversationServiceTest {
 	private AuditLogService auditLogService;
 
 	@Mock
+	private AuditJsonWriter auditJsonWriter;
+
+	@Mock
 	private RealtimeEventPublisher realtimeEventPublisher;
 
 	private ConversationService conversationService;
@@ -72,8 +76,10 @@ class ConversationServiceTest {
 				messageRepository,
 				userRepository,
 				auditLogService,
+				auditJsonWriter,
 				realtimeEventPublisher);
 		lenient().when(messageRepository.countUnreadByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
+		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 		lenient().when(conversationMemberRepository.findActiveMember(any(UUID.class), any(UUID.class)))
 				.thenReturn(Optional.empty());
 	}
@@ -159,7 +165,7 @@ class ConversationServiceTest {
 		when(conversationMemberRepository.findActiveMember(conversation.id(), USER_LOW))
 				.thenReturn(Optional.of(member(conversation.id(), USER_LOW, "OWNER")));
 		when(conversationRepository.updateGroup(eq(conversation.id()), eq("Updated"), eq("https://cdn.example.com/avatar.png"), any(Instant.class)))
-				.thenReturn(updatedConversation);
+				.thenReturn(Optional.of(updatedConversation));
 		when(conversationMemberRepository.findMemberIds(conversation.id())).thenReturn(List.of(USER_LOW, USER_HIGH));
 		when(messageRepository.countUnreadByConversationIds(eq(USER_LOW), any())).thenReturn(Map.of());
 
@@ -248,6 +254,26 @@ class ConversationServiceTest {
 		assertThat(responses).isEmpty();
 		verify(conversationRepository).findByMember(USER_LOW, false, 50, 0);
 		verifyNoInteractions(realtimeEventPublisher);
+	}
+
+	@Test
+	void createDirectConversationReturnsExistingConversationWhenRaceConflictHappens() {
+		Conversation temporaryConversation = conversation(USER_LOW);
+		Conversation existingConversation = conversation(USER_LOW);
+		givenActiveUsers(USER_LOW, USER_HIGH);
+		when(conversationRepository.findDirectByPair(USER_LOW, USER_HIGH))
+				.thenReturn(Optional.empty())
+				.thenReturn(Optional.of(existingConversation));
+		when(conversationRepository.save(any(Conversation.class))).thenReturn(temporaryConversation);
+		when(conversationRepository.saveDirectConversation(temporaryConversation.id(), USER_LOW, USER_HIGH)).thenReturn(false);
+		when(conversationMemberRepository.findMemberIds(existingConversation.id())).thenReturn(List.of(USER_LOW, USER_HIGH));
+		when(messageRepository.countUnreadByConversationIds(eq(USER_LOW), any())).thenReturn(Map.of());
+
+		ConversationResponse response = conversationService.create(USER_LOW, directRequest(USER_HIGH));
+
+		assertThat(response.id()).isEqualTo(existingConversation.id());
+		verify(conversationRepository).deleteById(temporaryConversation.id());
+		verify(conversationMemberRepository, never()).save(any(ConversationMember.class));
 	}
 
 	private void givenActiveUsers(UUID firstUserId, UUID secondUserId) {

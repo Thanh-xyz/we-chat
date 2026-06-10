@@ -118,19 +118,19 @@ public class UserRepository {
 	}
 
 	public User updateAccountStatus(UUID id, String accountStatus, Instant updatedAt) {
-		Instant deletedAt = "DELETED".equals(accountStatus) ? updatedAt : null;
 		jdbcTemplate.update("""
 				update users
 				set account_status = ?,
 				    enabled = ?,
-				    deleted_at = coalesce(?, deleted_at),
+				    deleted_at = case when ? = 'DELETED' then ? else null end,
 				    token_version = token_version + 1,
 				    updated_at = ?
 				where id = ?
 				""",
 				accountStatus,
 				"ACTIVE".equals(accountStatus),
-				toTimestamp(deletedAt),
+				accountStatus,
+				Timestamp.from(updatedAt),
 				Timestamp.from(updatedAt),
 				id);
 		return findByIdIncludingDeleted(id).orElseThrow();
@@ -144,12 +144,18 @@ public class UserRepository {
 				""", Timestamp.from(loginAt), Timestamp.from(loginAt), id);
 	}
 
-	public void recordLoginFailure(UUID id, Instant updatedAt) {
+	public User recordLoginFailure(UUID id, Instant updatedAt, int maxFailedAttempts, Instant lockUntil) {
 		jdbcTemplate.update("""
 				update users
-				set failed_login_count = failed_login_count + 1, updated_at = ?
+				set failed_login_count = failed_login_count + 1,
+				    locked_until = case
+				        when failed_login_count + 1 >= ? then ?
+				        else locked_until
+				    end,
+				    updated_at = ?
 				where id = ?
-				""", Timestamp.from(updatedAt), id);
+				""", maxFailedAttempts, Timestamp.from(lockUntil), Timestamp.from(updatedAt), id);
+		return findByIdIncludingDeleted(id).orElseThrow();
 	}
 
 	public void incrementTokenVersion(UUID id, Instant updatedAt) {

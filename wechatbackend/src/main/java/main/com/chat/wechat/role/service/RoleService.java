@@ -1,9 +1,11 @@
 package main.com.chat.wechat.role.service;
 
 import main.com.chat.wechat.audit.service.AuditLogService;
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.role.dto.RoleRequest;
 import main.com.chat.wechat.role.dto.RoleResponse;
+import main.com.chat.wechat.role.model.Permission;
 import main.com.chat.wechat.role.model.Role;
 import main.com.chat.wechat.role.repository.RolePermissionRepository;
 import main.com.chat.wechat.role.repository.RoleRepository;
@@ -15,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -23,21 +26,27 @@ public class RoleService {
 	private final RolePermissionRepository rolePermissionRepository;
 	private final UserRoleRepository userRoleRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 
 	public RoleService(
 			RoleRepository roleRepository,
 			RolePermissionRepository rolePermissionRepository,
 			UserRoleRepository userRoleRepository,
-			AuditLogService auditLogService) {
+			AuditLogService auditLogService,
+			AuditJsonWriter auditJsonWriter) {
 		this.roleRepository = roleRepository;
 		this.rolePermissionRepository = rolePermissionRepository;
 		this.userRoleRepository = userRoleRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 	}
 
 	public List<RoleResponse> list() {
-		return roleRepository.findAll().stream()
-				.map(role -> RoleResponse.from(role, rolePermissionRepository.findPermissionsByRoleId(role.id())))
+		List<Role> roles = roleRepository.findAll();
+		Map<UUID, List<Permission>> permissionsByRoleId =
+				rolePermissionRepository.findPermissionsByRoleIds(roles.stream().map(Role::id).toList());
+		return roles.stream()
+				.map(role -> RoleResponse.from(role, permissionsByRoleId.getOrDefault(role.id(), List.of())))
 				.toList();
 	}
 
@@ -57,7 +66,7 @@ public class RoleService {
 				null,
 				now,
 				now));
-		auditLogService.log("ADMIN_ROLE_CREATE", "ROLE", role.id().toString(), null, "{\"code\":\"" + role.code() + "\"}");
+		auditLogService.log("ADMIN_ROLE_CREATE", "ROLE", role.id().toString(), null, auditJsonWriter.write(new RoleCodeAuditValue(role.code())));
 		return RoleResponse.from(role, rolePermissionRepository.findPermissionsByRoleId(role.id()));
 	}
 
@@ -79,8 +88,8 @@ public class RoleService {
 				"ADMIN_ROLE_UPDATE",
 				"ROLE",
 				id.toString(),
-				"{\"code\":\"" + before.code() + "\"}",
-				"{\"code\":\"" + updated.code() + "\"}");
+				auditJsonWriter.write(new RoleCodeAuditValue(before.code())),
+				auditJsonWriter.write(new RoleCodeAuditValue(updated.code())));
 		return RoleResponse.from(updated, rolePermissionRepository.findPermissionsByRoleId(updated.id()));
 	}
 
@@ -95,7 +104,7 @@ public class RoleService {
 			throw new ApiException(HttpStatus.CONFLICT, "Role is assigned to users");
 		}
 		roleRepository.softDelete(id, Instant.now());
-		auditLogService.log("ADMIN_ROLE_DELETE", "ROLE", id.toString(), "{\"code\":\"" + role.code() + "\"}", null);
+		auditLogService.log("ADMIN_ROLE_DELETE", "ROLE", id.toString(), auditJsonWriter.write(new RoleCodeAuditValue(role.code())), null);
 	}
 
 	private String normalizeCode(String code) {
@@ -104,5 +113,8 @@ public class RoleService {
 
 	private String trimToNull(String value) {
 		return value == null || value.isBlank() ? null : value.trim();
+	}
+
+	private record RoleCodeAuditValue(String code) {
 	}
 }

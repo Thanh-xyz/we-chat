@@ -16,10 +16,11 @@ class WechatApplicationTests {
 	}
 
 	static boolean databaseConfigurationAvailable() {
-		return System.getenv("DATABASE_URL") != null
+		return "true".equalsIgnoreCase(System.getenv("RUN_DB_TESTS"))
+				&& (System.getenv("DATABASE_URL") != null
 				|| Files.exists(Path.of(".env"))
 				|| Files.exists(Path.of("../.env"))
-				|| Files.exists(Path.of("wechatbackend/.env"));
+				|| Files.exists(Path.of("wechatbackend/.env")));
 	}
 
 }
