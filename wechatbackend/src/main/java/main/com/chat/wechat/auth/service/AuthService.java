@@ -6,11 +6,13 @@ import main.com.chat.wechat.auth.dto.LoginRequest;
 import main.com.chat.wechat.auth.dto.RegisterRequest;
 import main.com.chat.wechat.auth.model.RefreshToken;
 import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.JwtToken;
 import main.com.chat.wechat.common.security.JwtTokenService;
+import main.com.chat.wechat.common.security.LoginSecurityProperties;
 import main.com.chat.wechat.common.security.RbacProperties;
 import main.com.chat.wechat.role.model.Role;
 import main.com.chat.wechat.role.repository.RoleRepository;
@@ -40,7 +42,9 @@ public class AuthService {
 	private final RoleRepository roleRepository;
 	private final UserRoleRepository userRoleRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 	private final RbacProperties rbacProperties;
+	private final LoginSecurityProperties loginSecurityProperties;
 
 	public AuthService(
 			UserRepository userRepository,
@@ -52,7 +56,9 @@ public class AuthService {
 			RoleRepository roleRepository,
 			UserRoleRepository userRoleRepository,
 			AuditLogService auditLogService,
-			RbacProperties rbacProperties) {
+			AuditJsonWriter auditJsonWriter,
+			RbacProperties rbacProperties,
+			LoginSecurityProperties loginSecurityProperties) {
 		this.userRepository = userRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.refreshTokenGenerator = refreshTokenGenerator;
@@ -62,7 +68,9 @@ public class AuthService {
 		this.roleRepository = roleRepository;
 		this.userRoleRepository = userRoleRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 		this.rbacProperties = rbacProperties;
+		this.loginSecurityProperties = loginSecurityProperties;
 	}
 
 	@Transactional
@@ -101,17 +109,29 @@ public class AuthService {
 		Role userRole = roleRepository.findByCode(defaultRoleCode)
 				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role is not configured"));
 		userRoleRepository.replace(user.id(), Set.of(userRole.id()), null, now);
-		auditLogService.log("AUTH_REGISTER", "USER", user.id().toString(), null, "{\"username\":\"" + username + "\"}");
+		auditLogService.log("AUTH_REGISTER", "USER", user.id().toString(), null, auditJsonWriter.write(new RegisterAuditValue(username)));
 		return issueTokens(user);
 	}
 
 	@Transactional
 	public AuthResponse login(LoginRequest request) {
+		Instant now = Instant.now();
 		User user = userRepository.findByUsernameOrEmail(request.identifier().trim())
 				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password"));
 
+		if (user.lockedUntil() != null && user.lockedUntil().isAfter(now)) {
+			throw new ApiException(HttpStatus.LOCKED, "User account is temporarily locked");
+		}
+
 		if (!passwordEncoder.matches(request.password(), user.passwordHash())) {
-			userRepository.recordLoginFailure(user.id(), Instant.now());
+			User failedUser = userRepository.recordLoginFailure(
+					user.id(),
+					now,
+					loginSecurityProperties.maxFailedLoginAttempts(),
+					now.plus(loginSecurityProperties.lockDuration()));
+			if (failedUser.lockedUntil() != null && failedUser.lockedUntil().isAfter(now)) {
+				throw new ApiException(HttpStatus.LOCKED, "User account is temporarily locked");
+			}
 			throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password");
 		}
 
@@ -119,7 +139,7 @@ public class AuthService {
 			throw new ApiException(HttpStatus.FORBIDDEN, "User account is not active");
 		}
 
-		userRepository.recordLoginSuccess(user.id(), Instant.now());
+		userRepository.recordLoginSuccess(user.id(), now);
 		return issueTokens(user);
 	}
 
@@ -186,5 +206,8 @@ public class AuthService {
 	}
 
 	private record GeneratedRefreshToken(String rawToken, String tokenHash, Instant expiresAt) {
+	}
+
+	private record RegisterAuditValue(String username) {
 	}
 }

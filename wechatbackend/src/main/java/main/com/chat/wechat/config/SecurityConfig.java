@@ -1,8 +1,11 @@
 package main.com.chat.wechat.config;
 
 import main.com.chat.wechat.common.exception.ErrorResponse;
+import main.com.chat.wechat.common.ratelimit.RateLimitFilter;
+import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
 import main.com.chat.wechat.common.security.JwtAuthenticationFilter;
 import main.com.chat.wechat.common.security.JwtProperties;
+import main.com.chat.wechat.common.security.LoginSecurityProperties;
 import main.com.chat.wechat.common.security.RbacProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -23,13 +26,19 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 
 @Configuration
-@EnableConfigurationProperties({JwtProperties.class, RbacProperties.class})
+@EnableConfigurationProperties({
+		JwtProperties.class,
+		RbacProperties.class,
+		RateLimitProperties.class,
+		LoginSecurityProperties.class
+})
 @EnableMethodSecurity
 public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain securityFilterChain(
 			HttpSecurity http,
+			RateLimitFilter rateLimitFilter,
 			JwtAuthenticationFilter jwtAuthenticationFilter,
 			ObjectMapper objectMapper) throws Exception {
 		http
@@ -51,6 +60,7 @@ public class SecurityConfig {
 									request.getRequestURI(),
 									null));
 						}))
+				.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
 		return http.build();

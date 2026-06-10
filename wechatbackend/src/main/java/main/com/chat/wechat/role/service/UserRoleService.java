@@ -1,5 +1,6 @@
 package main.com.chat.wechat.role.service;
 
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
 import main.com.chat.wechat.common.exception.ApiException;
@@ -18,6 +19,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -28,6 +30,7 @@ public class UserRoleService {
 	private final UserRoleRepository userRoleRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 	private final RbacProperties rbacProperties;
 
 	public UserRoleService(
@@ -36,17 +39,23 @@ public class UserRoleService {
 			UserRoleRepository userRoleRepository,
 			RefreshTokenRepository refreshTokenRepository,
 			AuditLogService auditLogService,
+			AuditJsonWriter auditJsonWriter,
 			RbacProperties rbacProperties) {
 		this.userRepository = userRepository;
 		this.roleRepository = roleRepository;
 		this.userRoleRepository = userRoleRepository;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 		this.rbacProperties = rbacProperties;
 	}
 
 	public List<String> findRoleCodes(UUID userId) {
 		return userRoleRepository.findRoleCodesByUserId(userId);
+	}
+
+	public Map<UUID, List<String>> findRoleCodesByUserIds(List<UUID> userIds) {
+		return userRoleRepository.findRoleCodesByUserIds(userIds);
 	}
 
 	public List<String> findPermissionCodes(UUID userId) {
@@ -155,8 +164,11 @@ public class UserRoleService {
 				action,
 				"USER",
 				userId.toString(),
-				"{\"roles\":\"" + beforeRoles + "\"}",
-				"{\"roles\":\"" + afterRoles + "\"}");
+				auditJsonWriter.write(new RolesAuditValue(beforeRoles)),
+				auditJsonWriter.write(new RolesAuditValue(afterRoles)));
+	}
+
+	private record RolesAuditValue(List<String> roles) {
 	}
 
 	private String normalizeRoleCode(String roleCode) {

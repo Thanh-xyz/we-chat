@@ -1,5 +1,6 @@
 package main.com.chat.wechat.message.service;
 
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.model.Conversation;
@@ -43,6 +44,7 @@ public class MessageService {
 	private final MessageAttachmentRepository messageAttachmentRepository;
 	private final UserRepository userRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
 
 	public MessageService(
@@ -52,6 +54,7 @@ public class MessageService {
 			MessageAttachmentRepository messageAttachmentRepository,
 			UserRepository userRepository,
 			AuditLogService auditLogService,
+			AuditJsonWriter auditJsonWriter,
 			RealtimeEventPublisher realtimeEventPublisher) {
 		this.conversationService = conversationService;
 		this.conversationRepository = conversationRepository;
@@ -59,6 +62,7 @@ public class MessageService {
 		this.messageAttachmentRepository = messageAttachmentRepository;
 		this.userRepository = userRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
 	}
 
@@ -135,8 +139,8 @@ public class MessageService {
 				"MESSAGE_EDIT",
 				"MESSAGE",
 				message.id().toString(),
-				"{\"content\":\"" + safeAuditValue(message.content()) + "\"}",
-				"{\"content\":\"" + safeAuditValue(content) + "\"}");
+				auditJsonWriter.write(new MessageContentAuditValue(message.content())),
+				auditJsonWriter.write(new MessageContentAuditValue(content)));
 		MessageResponse response = MessageResponse.from(
 				updated,
 				messageRepository.findReactionSummaries(updated.id(), actorUserId),
@@ -165,7 +169,7 @@ public class MessageService {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "Message recall window has expired");
 		}
 		Message recalled = messageRepository.recall(message.id(), now);
-		auditLogService.log("MESSAGE_RECALL", "MESSAGE", message.id().toString(), null, "{\"isRecalled\":true}");
+		auditLogService.log("MESSAGE_RECALL", "MESSAGE", message.id().toString(), null, auditJsonWriter.write(new MessageRecallAuditValue(true)));
 		MessageResponse response = MessageResponse.from(recalled, messageRepository.findReactionSummaries(recalled.id(), actorUserId));
 		publishConversationEvent(
 				recalled.conversationId(),
@@ -178,7 +182,7 @@ public class MessageService {
 		findActiveUser(actorUserId);
 		Message message = findAccessibleMessage(actorUserId, messageId);
 		messageRepository.deleteForUser(message.id(), actorUserId, Instant.now());
-		auditLogService.log("MESSAGE_DELETE_FOR_ME", "MESSAGE", message.id().toString(), null, "{\"userId\":\"" + actorUserId + "\"}");
+		auditLogService.log("MESSAGE_DELETE_FOR_ME", "MESSAGE", message.id().toString(), null, auditJsonWriter.write(new UserIdAuditValue(actorUserId)));
 		realtimeEventPublisher.publishToUserAfterCommit(
 				actorUserId,
 				RealtimeEvent.of("message.deleted_for_me", message.conversationId(), message.id(), actorUserId, actorUserId, Map.of("messageId", message.id())));
@@ -296,7 +300,12 @@ public class MessageService {
 		return emoji.trim();
 	}
 
-	private String safeAuditValue(String value) {
-		return value == null ? null : value.replace("\\", "\\\\").replace("\"", "\\\"");
+	private record MessageContentAuditValue(String content) {
+	}
+
+	private record MessageRecallAuditValue(boolean isRecalled) {
+	}
+
+	private record UserIdAuditValue(UUID userId) {
 	}
 }

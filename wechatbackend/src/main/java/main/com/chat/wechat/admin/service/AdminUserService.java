@@ -3,6 +3,7 @@ package main.com.chat.wechat.admin.service;
 import main.com.chat.wechat.admin.dto.AdminUserResponse;
 import main.com.chat.wechat.admin.dto.UpdateUserRolesRequest;
 import main.com.chat.wechat.admin.dto.UpdateUserStatusRequest;
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.auth.repository.RefreshTokenRepository;
 import main.com.chat.wechat.common.exception.ApiException;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,23 +26,28 @@ public class AdminUserService {
 	private final UserRoleService userRoleService;
 	private final RefreshTokenRepository refreshTokenRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 
 	public AdminUserService(
 			UserRepository userRepository,
 			UserRoleService userRoleService,
 			RefreshTokenRepository refreshTokenRepository,
-			AuditLogService auditLogService) {
+			AuditLogService auditLogService,
+			AuditJsonWriter auditJsonWriter) {
 		this.userRepository = userRepository;
 		this.userRoleService = userRoleService;
 		this.refreshTokenRepository = refreshTokenRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 	}
 
 	public List<AdminUserResponse> list(String search, String accountStatus, int limit, int offset) {
 		int safeLimit = Math.min(Math.max(limit, 1), 100);
 		int safeOffset = Math.max(offset, 0);
-		return userRepository.findAllForAdmin(search, accountStatus, safeLimit, safeOffset).stream()
-				.map(user -> AdminUserResponse.from(user, userRoleService.findRoleCodes(user.id())))
+		List<User> users = userRepository.findAllForAdmin(search, accountStatus, safeLimit, safeOffset);
+		Map<UUID, List<String>> rolesByUserId = userRoleService.findRoleCodesByUserIds(users.stream().map(User::id).toList());
+		return users.stream()
+				.map(user -> AdminUserResponse.from(user, rolesByUserId.getOrDefault(user.id(), List.of())))
 				.toList();
 	}
 
@@ -65,8 +72,8 @@ public class AdminUserService {
 				auditActionForStatus(request.accountStatus()),
 				"USER",
 				id.toString(),
-				"{\"accountStatus\":\"" + before.accountStatus() + "\"}",
-				"{\"accountStatus\":\"" + updated.accountStatus() + "\"}");
+				auditJsonWriter.write(new AccountStatusAuditValue(before.accountStatus())),
+				auditJsonWriter.write(new AccountStatusAuditValue(updated.accountStatus())));
 		return AdminUserResponse.from(updated, userRoleService.findRoleCodes(updated.id()));
 	}
 
@@ -87,5 +94,8 @@ public class AdminUserService {
 			case "DELETED" -> "ADMIN_USER_SOFT_DELETE";
 			default -> "ADMIN_USER_STATUS_UPDATE";
 		};
+	}
+
+	private record AccountStatusAuditValue(String accountStatus) {
 	}
 }

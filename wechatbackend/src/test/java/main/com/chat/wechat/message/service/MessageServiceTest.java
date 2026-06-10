@@ -1,5 +1,6 @@
 package main.com.chat.wechat.message.service;
 
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.model.Conversation;
@@ -33,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -63,6 +65,9 @@ class MessageServiceTest {
 	private AuditLogService auditLogService;
 
 	@Mock
+	private AuditJsonWriter auditJsonWriter;
+
+	@Mock
 	private RealtimeEventPublisher realtimeEventPublisher;
 
 	private MessageService messageService;
@@ -76,7 +81,9 @@ class MessageServiceTest {
 				messageAttachmentRepository,
 				userRepository,
 				auditLogService,
+				auditJsonWriter,
 				realtimeEventPublisher);
+		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 	}
 
 	@Test
@@ -181,6 +188,20 @@ class MessageServiceTest {
 
 		assertThat(response.recalled()).isTrue();
 		assertThat(response.content()).isEqualTo("Tin nhắn đã được thu hồi");
+	}
+
+	@Test
+	void recallMessageRejectsNonSender() {
+		Message message = message(OTHER_USER_ID, "TEXT", Instant.now(), false, false);
+		when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(activeUser(ACTOR_ID)));
+		when(messageRepository.findById(MESSAGE_ID)).thenReturn(Optional.of(message));
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+
+		assertThatThrownBy(() -> messageService.recall(ACTOR_ID, MESSAGE_ID))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.FORBIDDEN));
+
+		verify(messageRepository, never()).recall(any(UUID.class), any(Instant.class));
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 package main.com.chat.wechat.conversation.service;
 
 import main.com.chat.wechat.audit.service.AuditLogService;
+import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.dto.AddMembersRequest;
 import main.com.chat.wechat.conversation.dto.ConversationResponse;
@@ -19,6 +20,7 @@ import main.com.chat.wechat.realtime.dto.RealtimeEvent;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +40,7 @@ public class ConversationService {
 	private final MessageRepository messageRepository;
 	private final UserRepository userRepository;
 	private final AuditLogService auditLogService;
+	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
 
 	public ConversationService(
@@ -46,12 +49,14 @@ public class ConversationService {
 			MessageRepository messageRepository,
 			UserRepository userRepository,
 			AuditLogService auditLogService,
+			AuditJsonWriter auditJsonWriter,
 			RealtimeEventPublisher realtimeEventPublisher) {
 		this.conversationRepository = conversationRepository;
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
 		this.auditLogService = auditLogService;
+		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
 	}
 
@@ -103,8 +108,8 @@ public class ConversationService {
 				"CONVERSATION_GROUP_UPDATE",
 				"CONVERSATION",
 				conversation.id().toString(),
-				"{\"name\":\"" + conversation.name() + "\",\"avatarUrl\":\"" + conversation.avatarUrl() + "\"}",
-				"{\"name\":\"" + updated.name() + "\",\"avatarUrl\":\"" + updated.avatarUrl() + "\"}");
+				auditJsonWriter.write(new ConversationUpdateAuditValue(conversation.name(), conversation.avatarUrl())),
+				auditJsonWriter.write(new ConversationUpdateAuditValue(updated.name(), updated.avatarUrl())));
 		publishConversationEvent(updated.id(), RealtimeEvent.of(
 				"conversation.updated",
 				updated.id(),
@@ -150,7 +155,7 @@ public class ConversationService {
 				"CONVERSATION",
 				conversation.id().toString(),
 				null,
-				"{\"userIds\":\"" + userIds + "\"}");
+				auditJsonWriter.write(new MemberIdsAuditValue(userIds)));
 		publishConversationEvent(conversation.id(), RealtimeEvent.of(
 				"conversation.member.added",
 				conversation.id(),
@@ -185,7 +190,7 @@ public class ConversationService {
 				selfRemove ? "CONVERSATION_MEMBER_LEAVE" : "CONVERSATION_MEMBER_REMOVE",
 				"CONVERSATION",
 				conversation.id().toString(),
-				"{\"userId\":\"" + userId + "\"}",
+				auditJsonWriter.write(new UserIdAuditValue(userId)),
 				null);
 		publishConversationEvent(conversation.id(), RealtimeEvent.of(
 				"conversation.member.removed",
@@ -357,14 +362,11 @@ public class ConversationService {
 				null,
 				now,
 				now));
-		if ("DIRECT".equals(request.type())) {
-			boolean inserted = conversationRepository.saveDirectConversation(
-					conversation.id(),
-					directConversationPair.userLowId(),
-					directConversationPair.userHighId());
-			if (!inserted) {
-				conversationRepository.deleteById(conversation.id());
-				return conversationRepository.findDirectByPair(
+			if ("DIRECT".equals(request.type())) {
+				boolean inserted = saveDirectConversationSafely(conversation.id(), directConversationPair);
+				if (!inserted) {
+					conversationRepository.deleteById(conversation.id());
+					return conversationRepository.findDirectByPair(
 								directConversationPair.userLowId(),
 								directConversationPair.userHighId())
 						.map(existingConversation -> toResponse(actorUserId, existingConversation))
@@ -385,8 +387,19 @@ public class ConversationService {
 					null,
 					null,
 					false));
+			}
+			return toResponse(actorUserId, conversation);
 		}
-		return toResponse(actorUserId, conversation);
+
+	private boolean saveDirectConversationSafely(UUID conversationId, DirectConversationPair directConversationPair) {
+		try {
+			return conversationRepository.saveDirectConversation(
+					conversationId,
+					directConversationPair.userLowId(),
+					directConversationPair.userHighId());
+		} catch (DuplicateKeyException exception) {
+			return false;
+		}
 	}
 
 	private List<ConversationResponse> toResponses(UUID actorUserId, List<Conversation> conversations) {
@@ -463,5 +476,14 @@ public class ConversationService {
 
 	private void publishConversationEvent(UUID conversationId, RealtimeEvent event) {
 		realtimeEventPublisher.publishToMembersAfterCommit(memberIds(conversationId), event);
+	}
+
+	private record ConversationUpdateAuditValue(String name, String avatarUrl) {
+	}
+
+	private record MemberIdsAuditValue(Set<UUID> userIds) {
+	}
+
+	private record UserIdAuditValue(UUID userId) {
 	}
 }
