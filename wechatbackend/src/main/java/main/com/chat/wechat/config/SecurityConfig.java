@@ -1,5 +1,7 @@
 package main.com.chat.wechat.config;
 
+import main.com.chat.wechat.attachment.service.AttachmentProperties;
+import main.com.chat.wechat.attachment.storage.StorageProperties;
 import main.com.chat.wechat.common.exception.ErrorResponse;
 import main.com.chat.wechat.common.ratelimit.RateLimitFilter;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
@@ -32,7 +34,9 @@ import java.time.Instant;
 		RbacProperties.class,
 		AuthEmailProperties.class,
 		RateLimitProperties.class,
-		LoginSecurityProperties.class
+		LoginSecurityProperties.class,
+		StorageProperties.class,
+		AttachmentProperties.class
 })
 @EnableMethodSecurity
 public class SecurityConfig {

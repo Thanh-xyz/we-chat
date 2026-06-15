@@ -14,6 +14,9 @@ public record CreateMessageRequest(
 
 		UUID replyToMessageId,
 
+		@Size(max = 10)
+		List<UUID> attachmentIds,
+
 		@Valid
 		@Size(max = 10)
 		List<AttachmentMetadataRequest> attachments) {

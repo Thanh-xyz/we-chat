@@ -6,10 +6,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -32,6 +37,21 @@ public class GlobalExceptionHandler {
 		return build(HttpStatus.BAD_REQUEST, "Validation failed", request, validationErrors);
 	}
 
+	@ExceptionHandler(MissingServletRequestPartException.class)
+	public ResponseEntity<ErrorResponse> handleMissingRequestPart(MissingServletRequestPartException exception, HttpServletRequest request) {
+		return build(HttpStatus.BAD_REQUEST, "Required request part is missing: " + exception.getRequestPartName(), request, null);
+	}
+
+	@ExceptionHandler(MissingServletRequestParameterException.class)
+	public ResponseEntity<ErrorResponse> handleMissingRequestParameter(MissingServletRequestParameterException exception, HttpServletRequest request) {
+		return build(HttpStatus.BAD_REQUEST, "Required request parameter is missing: " + exception.getParameterName(), request, null);
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException exception, HttpServletRequest request) {
+		return build(HttpStatus.BAD_REQUEST, "Invalid request parameter: " + exception.getName(), request, null);
+	}
+
 	@ExceptionHandler(DuplicateKeyException.class)
 	public ResponseEntity<ErrorResponse> handleDuplicateKey(DuplicateKeyException exception, HttpServletRequest request) {
 		return build(HttpStatus.CONFLICT, "Resource already exists", request, null);
@@ -45,6 +65,16 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(AuthenticationException.class)
 	public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException exception, HttpServletRequest request) {
 		return build(HttpStatus.UNAUTHORIZED, "Authentication required", request, null);
+	}
+
+	@ExceptionHandler(MaxUploadSizeExceededException.class)
+	public ResponseEntity<ErrorResponse> handleMaxUploadSize(MaxUploadSizeExceededException exception, HttpServletRequest request) {
+		return build(HttpStatus.PAYLOAD_TOO_LARGE, "Uploaded file is too large", request, null);
+	}
+
+	@ExceptionHandler(MultipartException.class)
+	public ResponseEntity<ErrorResponse> handleMultipart(MultipartException exception, HttpServletRequest request) {
+		return build(HttpStatus.BAD_REQUEST, "Invalid multipart request", request, null);
 	}
 
 	@ExceptionHandler(Exception.class)

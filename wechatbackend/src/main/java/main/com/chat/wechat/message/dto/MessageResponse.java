@@ -59,7 +59,7 @@ public record MessageResponse(
 		return new AttachmentMetadataResponse(
 				attachment.id(),
 				attachment.messageId(),
-				attachment.fileName(),
+				attachment.originalFileName(),
 				attachment.fileUrl(),
 				attachment.fileType(),
 				attachment.fileSize(),
