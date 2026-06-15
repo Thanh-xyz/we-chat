@@ -227,7 +227,7 @@ public class ConversationService {
 				actorUserId,
 				actorUserId,
 				Map.of("lastReadMessageId", lastReadMessageId == null ? "" : lastReadMessageId.toString())));
-		return new ReadConversationResponse(conversation.id(), actorUserId, lastReadMessageId, readAt, unreadCount);
+		return new ReadConversationResponse(conversation.id(), actorUserId, lastReadMessageId, readAt, readAt, unreadCount);
 	}
 
 	@Transactional

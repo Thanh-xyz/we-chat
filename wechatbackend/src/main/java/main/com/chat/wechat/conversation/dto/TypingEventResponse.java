@@ -3,11 +3,11 @@ package main.com.chat.wechat.conversation.dto;
 import java.time.Instant;
 import java.util.UUID;
 
-public record ReadConversationResponse(
+public record TypingEventResponse(
 		UUID conversationId,
 		UUID userId,
-		UUID lastReadMessageId,
-		Instant lastReadAt,
-		Instant readAt,
-		int unreadCount) {
+		boolean typing,
+		String eventType,
+		Instant occurredAt,
+		boolean published) {
 }
