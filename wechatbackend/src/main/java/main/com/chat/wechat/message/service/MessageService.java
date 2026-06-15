@@ -26,6 +26,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -72,7 +73,8 @@ public class MessageService {
 		Conversation conversation = conversationService.findAccessibleConversation(actorUserId, conversationId);
 		String messageType = normalizeClientMessageType(request.messageType());
 		String content = normalizeContent(messageType, request.content());
-		validateAttachments(messageType, request);
+		List<MessageAttachment> pendingAttachments = resolvePendingAttachments(actorUserId, conversation.id(), messageType, request);
+		validateAttachments(messageType, request, pendingAttachments);
 		if (request.replyToMessageId() != null
 				&& !messageRepository.existsInConversation(request.replyToMessageId(), conversation.id())) {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "Reply target message is not in this conversation");
@@ -93,12 +95,14 @@ public class MessageService {
 				false,
 				now,
 				now));
-		List<MessageAttachment> attachments = saveAttachments(message.id(), request, now);
+		List<MessageAttachment> attachments = saveAttachments(message.id(), actorUserId, conversation.id(), request, pendingAttachments, now);
 		conversationRepository.updateLastMessage(conversation.id(), message.id(), now);
 		MessageResponse response = MessageResponse.from(message, List.of(), attachments);
 		publishConversationEvent(
 				conversation.id(),
-				RealtimeEvent.of("message.created", conversation.id(), message.id(), actorUserId, null, Map.of("messageId", message.id())));
+				RealtimeEvent.of("message.created", conversation.id(), message.id(), actorUserId, null, Map.of(
+						"messageId", message.id(),
+						"attachments", response.attachments())));
 		return response;
 	}
 
@@ -169,6 +173,7 @@ public class MessageService {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "Message recall window has expired");
 		}
 		Message recalled = messageRepository.recall(message.id(), now);
+		messageAttachmentRepository.softDeleteByMessageId(message.id(), now);
 		auditLogService.log("MESSAGE_RECALL", "MESSAGE", message.id().toString(), null, auditJsonWriter.write(new MessageRecallAuditValue(true)));
 		MessageResponse response = MessageResponse.from(recalled, messageRepository.findReactionSummaries(recalled.id(), actorUserId));
 		publishConversationEvent(
@@ -264,14 +269,52 @@ public class MessageService {
 		return normalized;
 	}
 
-	private void validateAttachments(String messageType, CreateMessageRequest request) {
-		boolean hasAttachments = request.attachments() != null && !request.attachments().isEmpty();
+	private void validateAttachments(String messageType, CreateMessageRequest request, List<MessageAttachment> pendingAttachments) {
+		boolean hasAttachments = !pendingAttachments.isEmpty()
+				|| (request.attachments() != null && !request.attachments().isEmpty());
 		if (("IMAGE".equals(messageType) || "FILE".equals(messageType) || "VOICE".equals(messageType)) && !hasAttachments) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "Attachment metadata is required for " + messageType + " messages");
+			throw new ApiException(HttpStatus.BAD_REQUEST, "Attachment metadata or attachmentIds are required for " + messageType + " messages");
 		}
 	}
 
-	private List<MessageAttachment> saveAttachments(UUID messageId, CreateMessageRequest request, Instant now) {
+	private List<MessageAttachment> resolvePendingAttachments(
+			UUID actorUserId,
+			UUID conversationId,
+			String messageType,
+			CreateMessageRequest request) {
+		if (request.attachmentIds() == null || request.attachmentIds().isEmpty()) {
+			return List.of();
+		}
+		if (request.attachmentIds().stream().anyMatch(id -> id == null)) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "Attachment id cannot be null");
+		}
+		List<UUID> attachmentIds = new LinkedHashSet<>(request.attachmentIds()).stream().toList();
+		List<MessageAttachment> attachments = messageAttachmentRepository.findPendingByUploaderAndConversation(
+				actorUserId,
+				conversationId,
+				attachmentIds);
+		if (attachments.size() != attachmentIds.size()) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "One or more attachments are invalid, already attached, or not in this conversation");
+		}
+		if (("IMAGE".equals(messageType) || "FILE".equals(messageType) || "VOICE".equals(messageType))
+				&& attachments.stream().anyMatch(attachment -> !messageType.equals(attachment.fileType()))) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "Attachment type does not match message type");
+		}
+		return attachments;
+	}
+
+	private List<MessageAttachment> saveAttachments(
+			UUID messageId,
+			UUID actorUserId,
+			UUID conversationId,
+			CreateMessageRequest request,
+			List<MessageAttachment> pendingAttachments,
+			Instant now) {
+		if (!pendingAttachments.isEmpty()) {
+			return pendingAttachments.stream()
+					.map(attachment -> messageAttachmentRepository.attachToMessage(attachment.id(), messageId, now))
+					.toList();
+		}
 		if (request.attachments() == null || request.attachments().isEmpty()) {
 			return List.of();
 		}
@@ -279,12 +322,42 @@ public class MessageService {
 				.map(attachment -> messageAttachmentRepository.save(new MessageAttachment(
 						UUID.randomUUID(),
 						messageId,
+						actorUserId,
+						conversationId,
 						attachment.fileName().trim(),
 						attachment.fileUrl().trim(),
-						StringUtils.hasText(attachment.fileType()) ? attachment.fileType().trim() : null,
+						attachment.fileUrl().trim(),
+						normalizeLegacyMimeType(attachment.fileType()),
+						normalizeLegacyFileType(attachment.fileType(), request.messageType()),
 						attachment.fileSize(),
+						null,
+						"CLEAN",
+						null,
+						now,
 						now)))
 				.toList();
+	}
+
+	private String normalizeLegacyMimeType(String fileType) {
+		return StringUtils.hasText(fileType) ? fileType.trim().toLowerCase(Locale.ROOT) : "application/octet-stream";
+	}
+
+	private String normalizeLegacyFileType(String fileType, String messageType) {
+		String normalizedMessageType = normalizeClientMessageType(messageType);
+		if ("IMAGE".equals(normalizedMessageType) || "FILE".equals(normalizedMessageType) || "VOICE".equals(normalizedMessageType)) {
+			return normalizedMessageType;
+		}
+		if (!StringUtils.hasText(fileType)) {
+			return "FILE";
+		}
+		String normalized = fileType.trim().toLowerCase(Locale.ROOT);
+		if (normalized.startsWith("image/")) {
+			return "IMAGE";
+		}
+		if (normalized.startsWith("audio/")) {
+			return "VOICE";
+		}
+		return "FILE";
 	}
 
 	private void publishConversationEvent(UUID conversationId, RealtimeEvent event) {

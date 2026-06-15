@@ -48,6 +48,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 		return switch (request.getRequestURI()) {
 			case "/api/auth/login" -> rateLimitProperties.authLogin();
 			case "/api/auth/register" -> rateLimitProperties.authRegister();
+			case "/api/auth/resend-verification" -> rateLimitProperties.authResendVerification();
 			case "/api/auth/refresh", "/api/auth/refresh-token" -> rateLimitProperties.authRefresh();
 			default -> null;
 		};

@@ -1,5 +1,7 @@
 package main.com.chat.wechat.config;
 
+import main.com.chat.wechat.attachment.service.AttachmentProperties;
+import main.com.chat.wechat.attachment.storage.StorageProperties;
 import main.com.chat.wechat.common.exception.ErrorResponse;
 import main.com.chat.wechat.common.ratelimit.RateLimitFilter;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
@@ -7,6 +9,7 @@ import main.com.chat.wechat.common.security.JwtAuthenticationFilter;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.LoginSecurityProperties;
 import main.com.chat.wechat.common.security.RbacProperties;
+import main.com.chat.wechat.auth.service.AuthEmailProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -29,8 +32,11 @@ import java.time.Instant;
 @EnableConfigurationProperties({
 		JwtProperties.class,
 		RbacProperties.class,
+		AuthEmailProperties.class,
 		RateLimitProperties.class,
-		LoginSecurityProperties.class
+		LoginSecurityProperties.class,
+		StorageProperties.class,
+		AttachmentProperties.class
 })
 @EnableMethodSecurity
 public class SecurityConfig {
@@ -45,7 +51,15 @@ public class SecurityConfig {
 				.csrf(AbstractHttpConfigurer::disable)
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
-						.requestMatchers("/api/auth/register", "/api/auth/login", "/api/auth/refresh", "/api/auth/refresh-token").permitAll()
+						.requestMatchers(
+								"/api/auth/register",
+								"/api/auth/login",
+								"/api/auth/refresh",
+								"/api/auth/refresh-token",
+								"/api/auth/forgot-password",
+								"/api/auth/reset-password",
+								"/api/auth/verify-email",
+								"/api/auth/resend-verification").permitAll()
 						.requestMatchers("/api/admin/**", "/admin/**").authenticated()
 						.anyRequest().authenticated())
 				.exceptionHandling(exceptionHandling -> exceptionHandling

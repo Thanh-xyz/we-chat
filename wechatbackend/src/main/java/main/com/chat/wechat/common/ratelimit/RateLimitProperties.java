@@ -7,6 +7,7 @@ public record RateLimitProperties(
 		Limit authLogin,
 		Limit authRefresh,
 		Limit authRegister,
+		Limit authResendVerification,
 		Limit messageSend,
 		Limit websocketConnect) {
 
@@ -14,6 +15,7 @@ public record RateLimitProperties(
 		authLogin = authLogin == null ? new Limit(5, 1) : authLogin;
 		authRefresh = authRefresh == null ? new Limit(20, 1) : authRefresh;
 		authRegister = authRegister == null ? new Limit(5, 1) : authRegister;
+		authResendVerification = authResendVerification == null ? new Limit(3, 15) : authResendVerification;
 		messageSend = messageSend == null ? new Limit(60, 1) : messageSend;
 		websocketConnect = websocketConnect == null ? new Limit(20, 1) : websocketConnect;
 	}

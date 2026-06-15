@@ -96,7 +96,10 @@ public class UserRoleRepository {
 	public void replace(UUID userId, Set<UUID> roleIds, UUID assignedBy, Instant assignedAt) {
 		jdbcTemplate.update("delete from user_roles where user_id = ?", userId);
 		for (UUID roleId : roleIds) {
-			assign(userId, roleId, assignedBy, assignedAt);
+			jdbcTemplate.update("""
+					insert into user_roles (user_id, role_id, assigned_by, assigned_at)
+					values (?, ?, ?, ?)
+					""", userId, roleId, assignedBy, Timestamp.from(assignedAt));
 		}
 	}
 

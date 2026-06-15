@@ -282,10 +282,10 @@ class MessageServiceTest {
 		assertThatThrownBy(() -> messageService.send(
 				ACTOR_ID,
 				CONVERSATION_ID,
-				new CreateMessageRequest(null, "IMAGE", null, List.of())))
+				new CreateMessageRequest(null, "IMAGE", null, List.of(), List.of())))
 				.isInstanceOfSatisfying(ApiException.class, exception -> {
 					assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST);
-					assertThat(exception.getMessage()).isEqualTo("Attachment metadata is required for IMAGE messages");
+					assertThat(exception.getMessage()).isEqualTo("Attachment metadata or attachmentIds are required for IMAGE messages");
 				});
 
 		verify(messageRepository, never()).save(any(Message.class));
@@ -297,10 +297,18 @@ class MessageServiceTest {
 		MessageAttachment savedAttachment = new MessageAttachment(
 				UUID.randomUUID(),
 				MESSAGE_ID,
+				ACTOR_ID,
+				CONVERSATION_ID,
 				"report.pdf",
 				"https://cdn.example.com/report.pdf",
+				"https://cdn.example.com/report.pdf",
 				"application/pdf",
+				"FILE",
 				1024L,
+				null,
+				"CLEAN",
+				null,
+				Instant.now(),
 				Instant.now());
 		when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(activeUser(ACTOR_ID)));
 		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
@@ -315,6 +323,7 @@ class MessageServiceTest {
 						null,
 						"FILE",
 						null,
+						List.of(),
 						List.of(new AttachmentMetadataRequest(
 								"report.pdf",
 								"https://cdn.example.com/report.pdf",
@@ -325,6 +334,32 @@ class MessageServiceTest {
 		assertThat(response.attachments().getFirst().fileName()).isEqualTo("report.pdf");
 		verify(messageAttachmentRepository).save(any(MessageAttachment.class));
 		verify(conversationRepository).updateLastMessage(eq(CONVERSATION_ID), eq(MESSAGE_ID), any(Instant.class));
+	}
+
+	@Test
+	void sendMessageAttachesPendingAttachmentIds() {
+		UUID attachmentId = UUID.fromString("00000000-0000-0000-0000-000000000030");
+		Message savedMessage = message(ACTOR_ID, "IMAGE", Instant.now(), false, false);
+		MessageAttachment pendingAttachment = attachment(attachmentId, null, "IMAGE");
+		MessageAttachment attachedAttachment = attachment(attachmentId, MESSAGE_ID, "IMAGE");
+		when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(activeUser(ACTOR_ID)));
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+		when(messageAttachmentRepository.findPendingByUploaderAndConversation(ACTOR_ID, CONVERSATION_ID, List.of(attachmentId)))
+				.thenReturn(List.of(pendingAttachment));
+		when(messageRepository.save(any(Message.class))).thenReturn(savedMessage);
+		when(messageAttachmentRepository.attachToMessage(eq(attachmentId), eq(MESSAGE_ID), any(Instant.class)))
+				.thenReturn(attachedAttachment);
+		when(conversationService.memberIds(CONVERSATION_ID)).thenReturn(List.of(ACTOR_ID, OTHER_USER_ID));
+
+		MessageResponse response = messageService.send(
+				ACTOR_ID,
+				CONVERSATION_ID,
+				new CreateMessageRequest(null, "IMAGE", null, List.of(attachmentId), List.of()));
+
+		assertThat(response.attachments()).hasSize(1);
+		assertThat(response.attachments().getFirst().id()).isEqualTo(attachmentId);
+		verify(messageAttachmentRepository).attachToMessage(eq(attachmentId), eq(MESSAGE_ID), any(Instant.class));
+		verify(messageAttachmentRepository, never()).save(any(MessageAttachment.class));
 	}
 
 	private Message message(UUID senderId, String messageType, Instant createdAt, boolean edited, boolean recalled) {
@@ -347,6 +382,26 @@ class MessageServiceTest {
 	private Conversation conversation() {
 		Instant now = Instant.now();
 		return new Conversation(CONVERSATION_ID, "GROUP", "Group", null, ACTOR_ID, null, null, null, now, now);
+	}
+
+	private MessageAttachment attachment(UUID attachmentId, UUID messageId, String fileType) {
+		Instant now = Instant.now();
+		return new MessageAttachment(
+				attachmentId,
+				messageId,
+				ACTOR_ID,
+				CONVERSATION_ID,
+				"image.png",
+				"attachments/key.png",
+				"/api/attachments/" + attachmentId + "/download",
+				"image/png",
+				fileType,
+				128L,
+				"checksum",
+				"CLEAN",
+				null,
+				now,
+				now);
 	}
 
 	private User activeUser(UUID id) {

@@ -10,7 +10,9 @@ public record RefreshToken(
 		Instant expiresAt,
 		Instant revokedAt,
 		Instant createdAt,
-		String replacedByTokenHash) {
+		String replacedByToken,
+		String deviceInfo,
+		String ipAddress) {
 
 	public boolean activeAt(Instant now) {
 		return revokedAt == null && expiresAt.isAfter(now);

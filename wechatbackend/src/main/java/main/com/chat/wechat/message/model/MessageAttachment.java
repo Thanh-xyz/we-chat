@@ -6,9 +6,17 @@ import java.util.UUID;
 public record MessageAttachment(
 		UUID id,
 		UUID messageId,
-		String fileName,
+		UUID uploaderId,
+		UUID conversationId,
+		String originalFileName,
+		String storageKey,
 		String fileUrl,
+		String mimeType,
 		String fileType,
 		Long fileSize,
-		Instant createdAt) {
+		String checksum,
+		String scanStatus,
+		Instant deletedAt,
+		Instant createdAt,
+		Instant updatedAt) {
 }
