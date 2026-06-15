@@ -103,6 +103,7 @@ public class MessageService {
 				RealtimeEvent.of("message.created", conversation.id(), message.id(), actorUserId, null, Map.of(
 						"messageId", message.id(),
 						"attachments", response.attachments())));
+		publishUnreadUpdates(conversation.id(), actorUserId);
 		return response;
 	}
 
@@ -179,6 +180,7 @@ public class MessageService {
 		publishConversationEvent(
 				recalled.conversationId(),
 				RealtimeEvent.of("message.recalled", recalled.conversationId(), recalled.id(), actorUserId, null, Map.of("messageId", recalled.id())));
+		publishUnreadUpdates(recalled.conversationId(), actorUserId);
 		return response;
 	}
 
@@ -191,6 +193,7 @@ public class MessageService {
 		realtimeEventPublisher.publishToUserAfterCommit(
 				actorUserId,
 				RealtimeEvent.of("message.deleted_for_me", message.conversationId(), message.id(), actorUserId, actorUserId, Map.of("messageId", message.id())));
+		publishUnreadUpdate(message.conversationId(), actorUserId);
 	}
 
 	@Transactional
@@ -364,6 +367,28 @@ public class MessageService {
 		realtimeEventPublisher.publishToMembersAfterCommit(
 				conversationService.memberIds(conversationId),
 				event);
+	}
+
+	private void publishUnreadUpdates(UUID conversationId, UUID excludedUserId) {
+		List<UUID> memberIds = conversationService.memberIds(conversationId);
+		if (memberIds == null || memberIds.isEmpty()) {
+			return;
+		}
+		memberIds.stream()
+				.filter(userId -> !userId.equals(excludedUserId))
+				.forEach(userId -> publishUnreadUpdate(conversationId, userId));
+	}
+
+	private void publishUnreadUpdate(UUID conversationId, UUID userId) {
+		int unreadCount = messageRepository.countUnreadByConversationIds(userId, List.of(conversationId))
+				.getOrDefault(conversationId, 0);
+		int totalUnreadCount = messageRepository.countTotalUnread(userId, false);
+		realtimeEventPublisher.publishToUserAfterCommit(
+				userId,
+				RealtimeEvent.of("conversation.unread.updated", conversationId, null, userId, userId, Map.of(
+						"conversationId", conversationId,
+						"unreadCount", unreadCount,
+						"totalUnreadCount", totalUnreadCount)));
 	}
 
 	private String normalizeEmoji(String emoji) {

@@ -78,6 +78,24 @@ public class MessageRepository {
 		return count != null && count > 0;
 	}
 
+	public boolean existsReadableInConversation(UUID messageId, UUID conversationId, UUID userId) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from messages m
+				where m.id = ?
+				  and m.conversation_id = ?
+				  and m.deleted_at is null
+				  and m.is_recalled = false
+				  and m.recalled_at is null
+				  and not exists (
+				      select 1
+				      from message_user_deletions mud
+				      where mud.message_id = m.id and mud.user_id = ?
+				  )
+				""", Integer.class, messageId, conversationId, userId);
+		return count != null && count > 0;
+	}
+
 	public boolean existsAnyInConversation(UUID messageId, UUID conversationId) {
 		Integer count = jdbcTemplate.queryForObject("""
 				select count(*)
@@ -85,6 +103,42 @@ public class MessageRepository {
 				where id = ? and conversation_id = ? and deleted_at is null
 				""", Integer.class, messageId, conversationId);
 		return count != null && count > 0;
+	}
+
+	public Optional<UUID> findLatestMessageId(UUID conversationId, UUID userId) {
+		try {
+			UUID messageId = jdbcTemplate.queryForObject("""
+					select m.id
+					from messages m
+					where m.conversation_id = ?
+					  and m.deleted_at is null
+					  and m.is_recalled = false
+					  and m.recalled_at is null
+					  and not exists (
+					      select 1
+					      from message_user_deletions mud
+					      where mud.message_id = m.id and mud.user_id = ?
+					  )
+					order by m.created_at desc
+					limit 1
+					""", UUID.class, conversationId, userId);
+			return Optional.ofNullable(messageId);
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public Optional<Instant> findCreatedAt(UUID messageId) {
+		try {
+			Timestamp createdAt = jdbcTemplate.queryForObject("""
+					select created_at
+					from messages
+					where id = ? and deleted_at is null
+					""", Timestamp.class, messageId);
+			return createdAt == null ? Optional.empty() : Optional.of(createdAt.toInstant());
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
 	}
 
 	public List<Message> findByConversationId(UUID conversationId, UUID actorUserId, int limit, int offset) {
@@ -226,6 +280,7 @@ public class MessageRepository {
 				where m.conversation_id = ?
 				  and m.deleted_at is null
 				  and m.is_recalled = false
+				  and m.recalled_at is null
 				  and m.sender_id <> ?
 				  and not exists (
 				      select 1
@@ -237,6 +292,25 @@ public class MessageRepository {
 				      or m.created_at > (select created_at from messages where id = ?)
 				  )
 				""", Integer.class, conversationId, actorUserId, actorUserId, lastReadMessageId, lastReadMessageId);
+		return count == null ? 0 : count;
+	}
+
+	public int countUnreadAfter(UUID conversationId, UUID actorUserId, Instant lastReadAt) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(*)
+				from messages m
+				where m.conversation_id = ?
+				  and m.deleted_at is null
+				  and m.is_recalled = false
+				  and m.recalled_at is null
+				  and m.sender_id <> ?
+				  and m.created_at > coalesce(?, timestamp '1970-01-01 00:00:00')
+				  and not exists (
+				      select 1
+				      from message_user_deletions mud
+				      where mud.message_id = m.id and mud.user_id = ?
+				  )
+				""", Integer.class, conversationId, actorUserId, toTimestamp(lastReadAt), actorUserId);
 		return count == null ? 0 : count;
 	}
 
@@ -266,8 +340,9 @@ public class MessageRepository {
 				    on m.conversation_id = c.id
 				   and m.deleted_at is null
 				   and m.is_recalled = false
+				   and m.recalled_at is null
 				   and m.sender_id <> ?
-				   and (cm.last_read_message_id is null or m.created_at > last_read.created_at)
+				   and m.created_at > coalesce(cm.last_read_at, last_read.created_at, timestamp '1970-01-01 00:00:00')
 				   and not exists (
 				       select 1
 				       from message_user_deletions mud
@@ -281,6 +356,33 @@ public class MessageRepository {
 						rs.getInt("unread_count")),
 				args);
 		return result;
+	}
+
+	public int countTotalUnread(UUID actorUserId, boolean includeArchived) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(m.id)
+				from conversation_members cm
+				join conversations c
+				    on c.id = cm.conversation_id
+				   and c.deleted_at is null
+				left join messages last_read on last_read.id = cm.last_read_message_id
+				left join messages m
+				    on m.conversation_id = cm.conversation_id
+				   and m.deleted_at is null
+				   and m.is_recalled = false
+				   and m.recalled_at is null
+				   and m.sender_id <> cm.user_id
+				   and m.created_at > coalesce(cm.last_read_at, last_read.created_at, timestamp '1970-01-01 00:00:00')
+				   and not exists (
+				       select 1
+				       from message_user_deletions mud
+				       where mud.message_id = m.id and mud.user_id = cm.user_id
+				   )
+				where cm.user_id = ?
+				  and cm.left_at is null
+				  and (? = true or cm.archived_at is null)
+				""", Integer.class, actorUserId, includeArchived);
+		return count == null ? 0 : count;
 	}
 
 	private RowMapper<MessageReactionResponse> reactionRowMapper() {

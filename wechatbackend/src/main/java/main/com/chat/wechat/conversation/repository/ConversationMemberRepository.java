@@ -1,6 +1,7 @@
 package main.com.chat.wechat.conversation.repository;
 
 import main.com.chat.wechat.conversation.model.ConversationMember;
+import main.com.chat.wechat.conversation.dto.ReadReceiptResponse;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -31,9 +32,9 @@ public class ConversationMemberRepository {
 		jdbcTemplate.update("""
 				insert into conversation_members (
 				    conversation_id, user_id, member_role, nickname, joined_at, left_at,
-				    muted_until, pinned_at, last_read_message_id, read_at, muted
+				    muted_until, pinned_at, last_read_message_id, last_read_at, read_at, muted
 				)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				on conflict (conversation_id, user_id) do nothing
 				""",
 				member.conversationId(),
@@ -46,6 +47,7 @@ public class ConversationMemberRepository {
 				toTimestamp(member.pinnedAt()),
 				member.lastReadMessageId(),
 				toTimestamp(member.readAt()),
+				toTimestamp(member.readAt()),
 				member.muted());
 		return member;
 	}
@@ -54,9 +56,9 @@ public class ConversationMemberRepository {
 		jdbcTemplate.update("""
 				insert into conversation_members (
 				    conversation_id, user_id, member_role, nickname, joined_at, left_at,
-				    muted_until, pinned_at, last_read_message_id, read_at, muted
+				    muted_until, pinned_at, last_read_message_id, last_read_at, read_at, muted
 				)
-				values (?, ?, ?, ?, ?, null, ?, ?, ?, ?, ?)
+				values (?, ?, ?, ?, ?, null, ?, ?, ?, ?, ?, ?)
 				on conflict (conversation_id, user_id)
 				do update set
 				    member_role = excluded.member_role,
@@ -74,6 +76,7 @@ public class ConversationMemberRepository {
 				toTimestamp(member.mutedUntil()),
 				toTimestamp(member.pinnedAt()),
 				member.lastReadMessageId(),
+				toTimestamp(member.readAt()),
 				toTimestamp(member.readAt()),
 				member.muted());
 		return member;
@@ -189,11 +192,114 @@ public class ConversationMemberRepository {
 	}
 
 	public void updateRead(UUID conversationId, UUID userId, UUID lastReadMessageId, Instant readAt) {
+		updateLastRead(conversationId, userId, lastReadMessageId, readAt, readAt);
+	}
+
+	public void updateLastRead(UUID conversationId, UUID userId, UUID lastReadMessageId, Instant lastReadAt, Instant readAt) {
 		jdbcTemplate.update("""
 				update conversation_members
-				set last_read_message_id = ?, read_at = ?
+				set last_read_message_id = ?, last_read_at = ?, read_at = ?
 				where conversation_id = ? and user_id = ? and left_at is null
-				""", lastReadMessageId, Timestamp.from(readAt), conversationId, userId);
+				""", lastReadMessageId, toTimestamp(lastReadAt), Timestamp.from(readAt), conversationId, userId);
+	}
+
+	public Optional<LastReadState> findLastRead(UUID conversationId, UUID userId) {
+		try {
+			LastReadState state = jdbcTemplate.queryForObject("""
+					select cm.conversation_id,
+					       cm.user_id,
+					       cm.last_read_message_id,
+					       coalesce(cm.last_read_at, last_read.created_at) as last_read_at,
+					       cm.read_at
+					from conversation_members cm
+					left join messages last_read on last_read.id = cm.last_read_message_id
+					where cm.conversation_id = ? and cm.user_id = ? and cm.left_at is null
+					""", (rs, rowNum) -> new LastReadState(
+							rs.getObject("conversation_id", UUID.class),
+							rs.getObject("user_id", UUID.class),
+							rs.getObject("last_read_message_id", UUID.class),
+							toInstant(rs, "last_read_at"),
+							toInstant(rs, "read_at")),
+					conversationId, userId);
+			return Optional.ofNullable(state);
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public int countUnread(UUID conversationId, UUID userId) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(m.id)
+				from conversation_members cm
+				join conversations c
+				    on c.id = cm.conversation_id
+				   and c.deleted_at is null
+				left join messages last_read on last_read.id = cm.last_read_message_id
+				left join messages m
+				    on m.conversation_id = cm.conversation_id
+				   and m.deleted_at is null
+				   and m.is_recalled = false
+				   and m.recalled_at is null
+				   and m.sender_id <> cm.user_id
+				   and m.created_at > coalesce(cm.last_read_at, last_read.created_at, timestamp '1970-01-01 00:00:00')
+				   and not exists (
+				       select 1
+				       from message_user_deletions mud
+				       where mud.message_id = m.id and mud.user_id = cm.user_id
+				   )
+				where cm.conversation_id = ?
+				  and cm.user_id = ?
+				  and cm.left_at is null
+				""", Integer.class, conversationId, userId);
+		return count == null ? 0 : count;
+	}
+
+	public int countTotalUnread(UUID userId, boolean includeArchived) {
+		Integer count = jdbcTemplate.queryForObject("""
+				select count(m.id)
+				from conversation_members cm
+				join conversations c
+				    on c.id = cm.conversation_id
+				   and c.deleted_at is null
+				left join messages last_read on last_read.id = cm.last_read_message_id
+				left join messages m
+				    on m.conversation_id = cm.conversation_id
+				   and m.deleted_at is null
+				   and m.is_recalled = false
+				   and m.recalled_at is null
+				   and m.sender_id <> cm.user_id
+				   and m.created_at > coalesce(cm.last_read_at, last_read.created_at, timestamp '1970-01-01 00:00:00')
+				   and not exists (
+				       select 1
+				       from message_user_deletions mud
+				       where mud.message_id = m.id and mud.user_id = cm.user_id
+				   )
+				where cm.user_id = ?
+				  and cm.left_at is null
+				  and (? = true or cm.archived_at is null)
+				""", Integer.class, userId, includeArchived);
+		return count == null ? 0 : count;
+	}
+
+	public List<ReadReceiptResponse> findReadReceiptsByConversationId(UUID conversationId) {
+		return jdbcTemplate.query("""
+				select cm.conversation_id,
+				       cm.user_id,
+				       cm.last_read_message_id,
+				       coalesce(cm.last_read_at, last_read.created_at) as last_read_at,
+				       cm.read_at
+				from conversation_members cm
+				left join messages last_read on last_read.id = cm.last_read_message_id
+				where cm.conversation_id = ?
+				  and cm.left_at is null
+				order by cm.joined_at
+				""", (rs, rowNum) -> new ReadReceiptResponse(
+						rs.getObject("conversation_id", UUID.class),
+						rs.getObject("user_id", UUID.class),
+						rs.getObject("last_read_message_id", UUID.class),
+						toInstant(rs, "last_read_at"),
+						toInstant(rs, "read_at")),
+				conversationId);
 	}
 
 	public ConversationMember updatePinnedAt(UUID conversationId, UUID userId, Instant pinnedAt) {
@@ -239,8 +345,16 @@ public class ConversationMemberRepository {
 				toInstant(rs, "pinned_at"),
 				toInstant(rs, "archived_at"),
 				rs.getObject("last_read_message_id", UUID.class),
-				toInstant(rs, "read_at"),
+				toInstant(rs, "last_read_at"),
 				rs.getBoolean("muted"));
+	}
+
+	public record LastReadState(
+			UUID conversationId,
+			UUID userId,
+			UUID lastReadMessageId,
+			Instant lastReadAt,
+			Instant readAt) {
 	}
 
 	private String placeholders(int count) {

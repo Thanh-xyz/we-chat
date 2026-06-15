@@ -3,13 +3,19 @@ package main.com.chat.wechat.conversation.controller;
 import jakarta.validation.Valid;
 import main.com.chat.wechat.common.security.AuthenticatedUser;
 import main.com.chat.wechat.conversation.dto.AddMembersRequest;
+import main.com.chat.wechat.conversation.dto.ConversationUnreadResponse;
 import main.com.chat.wechat.conversation.dto.ConversationResponse;
 import main.com.chat.wechat.conversation.dto.CreateConversationRequest;
+import main.com.chat.wechat.conversation.dto.MarkConversationReadRequest;
 import main.com.chat.wechat.conversation.dto.MuteConversationRequest;
-import main.com.chat.wechat.conversation.dto.ReadConversationRequest;
 import main.com.chat.wechat.conversation.dto.ReadConversationResponse;
+import main.com.chat.wechat.conversation.dto.ReadReceiptResponse;
+import main.com.chat.wechat.conversation.dto.TypingEventRequest;
+import main.com.chat.wechat.conversation.dto.TypingEventResponse;
 import main.com.chat.wechat.conversation.dto.UpdateConversationRequest;
+import main.com.chat.wechat.conversation.service.ConversationReadService;
 import main.com.chat.wechat.conversation.service.ConversationService;
+import main.com.chat.wechat.conversation.service.TypingService;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
 import main.com.chat.wechat.message.dto.MessageResponse;
 import main.com.chat.wechat.message.service.MessageService;
@@ -32,10 +38,18 @@ import java.util.UUID;
 @RequestMapping("/api/conversations")
 public class ConversationController {
 	private final ConversationService conversationService;
+	private final ConversationReadService conversationReadService;
+	private final TypingService typingService;
 	private final MessageService messageService;
 
-	public ConversationController(ConversationService conversationService, MessageService messageService) {
+	public ConversationController(
+			ConversationService conversationService,
+			ConversationReadService conversationReadService,
+			TypingService typingService,
+			MessageService messageService) {
 		this.conversationService = conversationService;
+		this.conversationReadService = conversationReadService;
+		this.typingService = typingService;
 		this.messageService = messageService;
 	}
 
@@ -66,6 +80,14 @@ public class ConversationController {
 			@RequestParam(defaultValue = "50") int limit,
 			@RequestParam(defaultValue = "0") int offset) {
 		return conversationService.search(user.id(), q, includeArchived, limit, offset);
+	}
+
+	@GetMapping("/unread-count")
+	@PreAuthorize("hasAuthority('CONVERSATION_READ')")
+	public ConversationUnreadResponse totalUnreadCount(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@RequestParam(defaultValue = "false") boolean includeArchived) {
+		return conversationReadService.totalUnreadCount(user.id(), includeArchived);
 	}
 
 	@GetMapping("/{id}")
@@ -112,8 +134,33 @@ public class ConversationController {
 	public ReadConversationResponse markRead(
 			@AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable UUID id,
-			@RequestBody(required = false) ReadConversationRequest request) {
-		return conversationService.markRead(user.id(), id, request);
+			@RequestBody(required = false) MarkConversationReadRequest request) {
+		return conversationReadService.markRead(user.id(), id, request);
+	}
+
+	@GetMapping("/{id}/unread-count")
+	@PreAuthorize("hasAuthority('CONVERSATION_READ')")
+	public ConversationUnreadResponse unreadCount(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID id) {
+		return conversationReadService.unreadCount(user.id(), id);
+	}
+
+	@GetMapping("/{id}/read-receipts")
+	@PreAuthorize("hasAuthority('CONVERSATION_READ')")
+	public List<ReadReceiptResponse> readReceipts(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID id) {
+		return conversationReadService.readReceipts(user.id(), id);
+	}
+
+	@PostMapping("/{id}/typing")
+	@PreAuthorize("hasAuthority('CONVERSATION_READ')")
+	public TypingEventResponse typing(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID id,
+			@Valid @RequestBody TypingEventRequest request) {
+		return typingService.publishTyping(user.id(), id, request);
 	}
 
 	@PostMapping("/{id}/pin")
