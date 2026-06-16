@@ -12,6 +12,8 @@ import main.com.chat.wechat.conversation.model.ConversationMember;
 import main.com.chat.wechat.conversation.model.DirectConversationPair;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
+import main.com.chat.wechat.friendship.repository.FriendshipRepository;
+import main.com.chat.wechat.friendship.repository.UserBlockRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
@@ -59,6 +61,12 @@ class ConversationServiceTest {
 	private UserRepository userRepository;
 
 	@Mock
+	private FriendshipRepository friendshipRepository;
+
+	@Mock
+	private UserBlockRepository userBlockRepository;
+
+	@Mock
 	private AuditLogService auditLogService;
 
 	@Mock
@@ -79,12 +87,16 @@ class ConversationServiceTest {
 				conversationMemberRepository,
 				messageRepository,
 				userRepository,
+				friendshipRepository,
+				userBlockRepository,
 				auditLogService,
 				auditJsonWriter,
 				realtimeEventPublisher,
 				notificationEventPublisher);
 		lenient().when(messageRepository.countUnreadByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
+		lenient().when(friendshipRepository.existsActive(any(UUID.class), any(UUID.class))).thenReturn(true);
+		lenient().when(userBlockRepository.existsBlockBetween(any(UUID.class), any(UUID.class))).thenReturn(false);
 		lenient().when(conversationMemberRepository.findActiveMember(any(UUID.class), any(UUID.class)))
 				.thenReturn(Optional.empty());
 	}

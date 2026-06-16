@@ -6,6 +6,7 @@ import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.model.Conversation;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.conversation.service.ConversationService;
+import main.com.chat.wechat.friendship.service.FriendshipService;
 import main.com.chat.wechat.message.dto.AttachmentMetadataRequest;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
 import main.com.chat.wechat.message.dto.EditMessageRequest;
@@ -63,6 +64,9 @@ class MessageServiceTest {
 	private UserRepository userRepository;
 
 	@Mock
+	private FriendshipService friendshipService;
+
+	@Mock
 	private AuditLogService auditLogService;
 
 	@Mock
@@ -84,6 +88,7 @@ class MessageServiceTest {
 				messageRepository,
 				messageAttachmentRepository,
 				userRepository,
+				friendshipService,
 				auditLogService,
 				auditJsonWriter,
 				realtimeEventPublisher,
