@@ -1,6 +1,8 @@
 package main.com.chat.wechat.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import main.com.chat.wechat.audit.service.AuditLogService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +24,12 @@ import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+	private AuditLogService auditLogService;
+
+	@Autowired
+	public void setAuditLogService(AuditLogService auditLogService) {
+		this.auditLogService = auditLogService;
+	}
 
 	@ExceptionHandler(ApiException.class)
 	public ResponseEntity<ErrorResponse> handleApiException(ApiException exception, HttpServletRequest request) {
@@ -59,6 +67,15 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(AccessDeniedException.class)
 	public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException exception, HttpServletRequest request) {
+		if (auditLogService != null) {
+			auditLogService.logFailure(
+					"SECURITY_ACCESS_DENIED",
+					"REQUEST",
+					request.getRequestURI(),
+					"Access denied",
+					null,
+					request);
+		}
 		return build(HttpStatus.FORBIDDEN, "Access denied", request, null);
 	}
 

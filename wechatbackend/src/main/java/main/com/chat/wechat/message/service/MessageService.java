@@ -103,6 +103,12 @@ public class MessageService {
 		List<MessageAttachment> attachments = saveAttachments(message.id(), actorUserId, conversation.id(), request, pendingAttachments, now);
 		conversationRepository.updateLastMessage(conversation.id(), message.id(), now);
 		MessageResponse response = MessageResponse.from(message, List.of(), attachments);
+		auditLogService.logSuccess(
+				"MESSAGE_CREATE",
+				"MESSAGE",
+				message.id().toString(),
+				null,
+				auditJsonWriter.write(new MessageCreateAuditValue(message.conversationId(), message.messageType(), attachments.size())));
 		publishConversationEvent(
 				conversation.id(),
 				RealtimeEvent.of("message.created", conversation.id(), message.id(), actorUserId, null, Map.of(
@@ -211,6 +217,12 @@ public class MessageService {
 		}
 		String emoji = normalizeEmoji(request.emoji());
 		messageRepository.addReaction(message.id(), actorUserId, emoji, Instant.now());
+		auditLogService.logSuccess(
+				"MESSAGE_REACTION_ADD",
+				"MESSAGE",
+				message.id().toString(),
+				null,
+				auditJsonWriter.write(new MessageReactionAuditValue(message.conversationId(), emoji)));
 		List<MessageReactionResponse> reactions = messageRepository.findReactionSummaries(message.id(), actorUserId);
 		publishConversationEvent(
 				message.conversationId(),
@@ -225,6 +237,12 @@ public class MessageService {
 		Message message = findAccessibleMessage(actorUserId, messageId);
 		String emoji = normalizeEmoji(request.emoji());
 		messageRepository.deleteReaction(message.id(), actorUserId, emoji);
+		auditLogService.logSuccess(
+				"MESSAGE_REACTION_REMOVE",
+				"MESSAGE",
+				message.id().toString(),
+				auditJsonWriter.write(new MessageReactionAuditValue(message.conversationId(), emoji)),
+				null);
 		List<MessageReactionResponse> reactions = messageRepository.findReactionSummaries(message.id(), actorUserId);
 		publishConversationEvent(
 				message.conversationId(),
@@ -409,6 +427,12 @@ public class MessageService {
 	}
 
 	private record MessageRecallAuditValue(boolean isRecalled) {
+	}
+
+	private record MessageCreateAuditValue(UUID conversationId, String messageType, int attachmentCount) {
+	}
+
+	private record MessageReactionAuditValue(UUID conversationId, String emoji) {
 	}
 
 	private record UserIdAuditValue(UUID userId) {

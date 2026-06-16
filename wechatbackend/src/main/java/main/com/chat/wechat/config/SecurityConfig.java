@@ -2,6 +2,7 @@ package main.com.chat.wechat.config;
 
 import main.com.chat.wechat.attachment.service.AttachmentProperties;
 import main.com.chat.wechat.attachment.storage.StorageProperties;
+import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ErrorResponse;
 import main.com.chat.wechat.common.ratelimit.RateLimitFilter;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
@@ -9,6 +10,7 @@ import main.com.chat.wechat.common.security.JwtAuthenticationFilter;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.LoginSecurityProperties;
 import main.com.chat.wechat.common.security.RbacProperties;
+import main.com.chat.wechat.common.web.RequestIdFilter;
 import main.com.chat.wechat.auth.service.AuthEmailProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -44,8 +46,10 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(
 			HttpSecurity http,
+			RequestIdFilter requestIdFilter,
 			RateLimitFilter rateLimitFilter,
 			JwtAuthenticationFilter jwtAuthenticationFilter,
+			AuditLogService auditLogService,
 			ObjectMapper objectMapper) throws Exception {
 		http
 				.csrf(AbstractHttpConfigurer::disable)
@@ -63,6 +67,24 @@ public class SecurityConfig {
 						.requestMatchers("/api/admin/**", "/admin/**").authenticated()
 						.anyRequest().authenticated())
 				.exceptionHandling(exceptionHandling -> exceptionHandling
+						.accessDeniedHandler((request, response, exception) -> {
+							auditLogService.logFailure(
+									"SECURITY_ACCESS_DENIED",
+									"REQUEST",
+									request.getRequestURI(),
+									"Access denied",
+									null,
+									request);
+							response.setStatus(HttpStatus.FORBIDDEN.value());
+							response.setContentType("application/json");
+							objectMapper.writeValue(response.getWriter(), new ErrorResponse(
+									Instant.now(),
+									HttpStatus.FORBIDDEN.value(),
+									HttpStatus.FORBIDDEN.getReasonPhrase(),
+									"Access denied",
+									request.getRequestURI(),
+									null));
+						})
 						.authenticationEntryPoint((request, response, exception) -> {
 							response.setStatus(HttpStatus.UNAUTHORIZED.value());
 							response.setContentType("application/json");
@@ -74,6 +96,7 @@ public class SecurityConfig {
 									request.getRequestURI(),
 									null));
 						}))
+				.addFilterBefore(requestIdFilter, UsernamePasswordAuthenticationFilter.class)
 				.addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
 				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 

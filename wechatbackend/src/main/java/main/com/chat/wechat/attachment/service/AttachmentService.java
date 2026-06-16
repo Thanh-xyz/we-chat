@@ -155,12 +155,13 @@ public class AttachmentService {
 		findActiveUser(actorUserId);
 		MessageAttachment attachment = findAccessibleAttachment(actorUserId, attachmentId);
 		if (!actorUserId.equals(attachment.uploaderId())) {
-			auditLogService.log(
-					"ATTACHMENT_ACCESS_DENIED",
+			auditLogService.logFailure(
+					"SECURITY_ACCESS_DENIED",
 					"ATTACHMENT",
 					attachment.id().toString(),
-					null,
-					auditJsonWriter.write(new AccessDeniedAuditValue(actorUserId, "DELETE")));
+					"Only the uploader can delete this attachment",
+					auditJsonWriter.write(new AccessDeniedAuditValue(actorUserId, "DELETE")),
+					null);
 			throw new ApiException(HttpStatus.FORBIDDEN, "Only the uploader can delete this attachment");
 		}
 		Instant deletedAt = Instant.now();
