@@ -141,7 +141,7 @@ public class AuthService {
 				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role is not configured"));
 		userRoleRepository.replace(user.id(), Set.of(userRole.id()), null, now);
 		issueEmailVerification(user, now);
-		auditLogService.log("AUTH_REGISTER", "USER", user.id().toString(), null, auditJsonWriter.write(new RegisterAuditValue(username)));
+		auditLogService.logSuccess("USER_CREATE", "USER", user.id().toString(), null, auditJsonWriter.write(new RegisterAuditValue(username)));
 		return new RegisterResponse(user.id(), user.email(), user.emailVerified());
 	}
 
@@ -151,17 +151,17 @@ public class AuthService {
 		String identifier = request.identifier().trim();
 		User user = userRepository.findByUsernameOrEmail(identifier)
 				.orElseThrow(() -> {
-					auditLogService.log("LOGIN_FAILED", "USER", null, null, auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
+					auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", null, "Invalid username/email or password", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 					return new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password");
 				});
 
 		if (user.lockedUntil() != null && user.lockedUntil().isAfter(now)) {
-			auditLogService.log("ACCOUNT_LOCKED", "USER", user.id().toString(), null, null, httpRequest);
+			auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", user.id().toString(), "User account is temporarily locked", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 			throw new ApiException(HttpStatus.LOCKED, "User account is temporarily locked");
 		}
 
 		if (!user.active() || !user.enabled()) {
-			auditLogService.log("LOGIN_FAILED", "USER", user.id().toString(), null, auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
+			auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", user.id().toString(), "User account is not active", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 			throw new ApiException(HttpStatus.FORBIDDEN, "User account is not active");
 		}
 
@@ -171,21 +171,21 @@ public class AuthService {
 					now,
 					loginSecurityProperties.maxFailedLoginAttempts(),
 					now.plus(loginSecurityProperties.lockDuration()));
-			auditLogService.log("LOGIN_FAILED", "USER", user.id().toString(), null, auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
+			auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", user.id().toString(), "Invalid username/email or password", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 			if (failedUser.lockedUntil() != null && failedUser.lockedUntil().isAfter(now)) {
-				auditLogService.log("ACCOUNT_LOCKED", "USER", user.id().toString(), null, null, httpRequest);
+				auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", user.id().toString(), "Repeated login failures locked the account", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 				throw new ApiException(HttpStatus.LOCKED, "User account is temporarily locked");
 			}
 			throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid username/email or password");
 		}
 
 		if (loginSecurityProperties.requireEmailVerified() && !user.emailVerified()) {
-			auditLogService.log("LOGIN_FAILED", "USER", user.id().toString(), null, auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
+			auditLogService.logFailure("AUTH_LOGIN_FAILED", "USER", user.id().toString(), "Email verification is required", auditJsonWriter.write(new LoginAuditValue(identifier)), httpRequest);
 			throw new ApiException(HttpStatus.FORBIDDEN, "Email verification is required");
 		}
 
 		userRepository.recordLoginSuccess(user.id(), now);
-		auditLogService.log("LOGIN_SUCCESS", "USER", user.id().toString(), null, null, httpRequest);
+		auditLogService.logSuccess("AUTH_LOGIN_SUCCESS", "USER", user.id().toString(), null, null, null, httpRequest);
 		return issueTokens(user, httpRequest);
 	}
 
@@ -194,14 +194,19 @@ public class AuthService {
 		Instant now = Instant.now();
 		String tokenHash = refreshTokenService.hash(rawRefreshToken);
 		RefreshToken storedToken = refreshTokenService.findByRawToken(rawRefreshToken)
-				.orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid refresh token"));
+				.orElseThrow(() -> {
+					auditLogService.logFailure("AUTH_REFRESH_TOKEN", "REFRESH_TOKEN", null, "Invalid refresh token", null, request);
+					return new ApiException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
+				});
 
 		if (storedToken.revokedAt() != null) {
 			refreshTokenService.revokeAllForUser(storedToken.userId(), now);
 			userRepository.incrementTokenVersion(storedToken.userId(), now);
+			auditLogService.logFailure("AUTH_REFRESH_TOKEN", "USER", storedToken.userId().toString(), "Refresh token reuse detected", null, request);
 			throw new ApiException(HttpStatus.UNAUTHORIZED, "Refresh token reuse detected");
 		}
 		if (!storedToken.expiresAt().isAfter(now)) {
+			auditLogService.logFailure("AUTH_REFRESH_TOKEN", "USER", storedToken.userId().toString(), "Refresh token expired", null, request);
 			throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid refresh token");
 		}
 
@@ -211,6 +216,7 @@ public class AuthService {
 
 		RefreshTokenService.GeneratedRefreshToken newRefreshToken = refreshTokenService.create(user.id(), now, request);
 		refreshTokenService.revokeByHash(tokenHash, now, newRefreshToken.tokenHash());
+		auditLogService.logSuccess("AUTH_REFRESH_TOKEN", "USER", user.id().toString(), null, null, null, request);
 		return issueTokens(user, newRefreshToken);
 	}
 
@@ -218,7 +224,7 @@ public class AuthService {
 	public void logout(String rawRefreshToken, HttpServletRequest request) {
 		String tokenHash = refreshTokenService.hash(rawRefreshToken);
 		refreshTokenService.revokeRaw(rawRefreshToken, Instant.now());
-		auditLogService.log("LOGOUT", "REFRESH_TOKEN", tokenHash, null, null, request);
+		auditLogService.logSuccess("AUTH_LOGOUT", "REFRESH_TOKEN", tokenHash, null, null, null, request);
 	}
 
 	@Transactional
@@ -226,7 +232,7 @@ public class AuthService {
 		Instant now = Instant.now();
 		refreshTokenService.revokeAllForUser(principal.id(), now);
 		userRepository.incrementTokenVersion(principal.id(), now);
-		auditLogService.log("LOGOUT_ALL", "USER", principal.id().toString(), null, null, request);
+		auditLogService.logSuccess("AUTH_LOGOUT", "USER", principal.id().toString(), null, null, null, request);
 	}
 
 	@Transactional
@@ -271,7 +277,7 @@ public class AuthService {
 		userRepository.updatePasswordAndIncrementTokenVersion(user.id(), passwordEncoder.encode(request.newPassword()), now);
 		passwordResetTokenRepository.markUsed(tokenHash, now);
 		refreshTokenService.revokeAllForUser(user.id(), now);
-		auditLogService.log("PASSWORD_RESET", "USER", user.id().toString(), null, null, httpRequest);
+		auditLogService.logSuccess("AUTH_PASSWORD_CHANGE", "USER", user.id().toString(), null, null, null, httpRequest);
 	}
 
 	@Transactional
@@ -304,7 +310,7 @@ public class AuthService {
 		userRepository.markEmailVerified(user.id(), now);
 		emailVerificationTokenRepository.markUsed(tokenHash, now);
 		emailVerificationTokenRepository.invalidateUnusedForUser(user.id(), now);
-		auditLogService.log("EMAIL_VERIFIED", "USER", user.id().toString(), null, null, httpRequest);
+		auditLogService.logSuccess("AUTH_EMAIL_VERIFY", "USER", user.id().toString(), null, null, null, httpRequest);
 	}
 
 	@Transactional
@@ -336,7 +342,7 @@ public class AuthService {
 		}
 		userRepository.updatePasswordAndIncrementTokenVersion(user.id(), passwordEncoder.encode(request.newPassword()), now);
 		refreshTokenService.revokeAllForUser(user.id(), now);
-		auditLogService.log("PASSWORD_CHANGED", "USER", user.id().toString(), null, null, httpRequest);
+		auditLogService.logSuccess("AUTH_PASSWORD_CHANGE", "USER", user.id().toString(), null, null, null, httpRequest);
 	}
 
 	private AuthResponse issueTokens(User user, HttpServletRequest request) {

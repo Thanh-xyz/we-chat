@@ -58,13 +58,25 @@ create table role_permissions (
 create table audit_logs (
     id uuid primary key,
     actor_user_id uuid references users(id) on delete set null,
+    actor_username varchar(80),
+    actor_email varchar(255),
     action varchar(120) not null,
     target_type varchar(80) not null,
     target_id varchar(120),
+    resource_type varchar(80) not null,
+    resource_id varchar(120),
+    target_user_id uuid references users(id) on delete set null,
+    conversation_id uuid,
+    message_id uuid,
     before_value text,
     after_value text,
+    metadata text,
     ip_address varchar(80),
     user_agent text,
+    request_id varchar(128),
+    trace_id varchar(128),
+    result varchar(20) not null default 'SUCCESS',
+    failure_reason text,
     created_at timestamp with time zone not null default now()
 );
 

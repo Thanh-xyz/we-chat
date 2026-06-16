@@ -252,6 +252,12 @@ public class ConversationService {
 	public ConversationResponse pin(UUID actorUserId, UUID conversationId) {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		ConversationMember member = conversationMemberRepository.updatePinnedAt(conversation.id(), actorUserId, Instant.now());
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				null,
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "PIN", true)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.pinned",
 				conversation.id(),
@@ -266,6 +272,12 @@ public class ConversationService {
 	public ConversationResponse unpin(UUID actorUserId, UUID conversationId) {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		ConversationMember member = conversationMemberRepository.updatePinnedAt(conversation.id(), actorUserId, null);
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "PIN", true)),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "PIN", false)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.pinned",
 				conversation.id(),
@@ -281,6 +293,12 @@ public class ConversationService {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		Instant mutedUntil = request == null ? null : request.mutedUntil();
 		ConversationMember member = conversationMemberRepository.updateMute(conversation.id(), actorUserId, true, mutedUntil);
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				null,
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "MUTE", true)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.muted",
 				conversation.id(),
@@ -295,6 +313,12 @@ public class ConversationService {
 	public ConversationResponse unmute(UUID actorUserId, UUID conversationId) {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		ConversationMember member = conversationMemberRepository.updateMute(conversation.id(), actorUserId, false, null);
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "MUTE", true)),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "MUTE", false)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.muted",
 				conversation.id(),
@@ -309,6 +333,12 @@ public class ConversationService {
 	public ConversationResponse archive(UUID actorUserId, UUID conversationId) {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		ConversationMember member = conversationMemberRepository.updateArchivedAt(conversation.id(), actorUserId, Instant.now());
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				null,
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "ARCHIVE", true)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.archived",
 				conversation.id(),
@@ -323,6 +353,12 @@ public class ConversationService {
 	public ConversationResponse unarchive(UUID actorUserId, UUID conversationId) {
 		Conversation conversation = findAccessibleConversation(actorUserId, conversationId);
 		ConversationMember member = conversationMemberRepository.updateArchivedAt(conversation.id(), actorUserId, null);
+		auditLogService.logSuccess(
+				"CONVERSATION_UPDATE",
+				"CONVERSATION",
+				conversation.id().toString(),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "ARCHIVE", true)),
+				auditJsonWriter.write(new MemberPreferenceAuditValue(actorUserId, "ARCHIVE", false)));
 		realtimeEventPublisher.publishToUserAfterCommit(actorUserId, RealtimeEvent.of(
 				"conversation.archived",
 				conversation.id(),
@@ -406,6 +442,12 @@ public class ConversationService {
 					null,
 					false));
 			}
+			auditLogService.logSuccess(
+					"CONVERSATION_CREATE",
+					"CONVERSATION",
+					conversation.id().toString(),
+					null,
+					auditJsonWriter.write(new ConversationCreateAuditValue(conversation.type(), memberIds.size())));
 			if ("GROUP".equals(conversation.type())) {
 				notificationEventPublisher.publish(NotificationEvent.groupCreated(
 						actorUserId,
@@ -504,6 +546,12 @@ public class ConversationService {
 	}
 
 	private record ConversationUpdateAuditValue(String name, String avatarUrl) {
+	}
+
+	private record ConversationCreateAuditValue(String type, int memberCount) {
+	}
+
+	private record MemberPreferenceAuditValue(UUID userId, String preference, boolean enabled) {
 	}
 
 	private record MemberIdsAuditValue(Set<UUID> userIds) {
