@@ -16,6 +16,8 @@ import main.com.chat.wechat.conversation.model.DirectConversationPair;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.event.NotificationEvent;
+import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.dto.RealtimeEvent;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
@@ -42,6 +44,7 @@ public class ConversationService {
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
+	private final NotificationEventPublisher notificationEventPublisher;
 
 	public ConversationService(
 			ConversationRepository conversationRepository,
@@ -50,7 +53,8 @@ public class ConversationService {
 			UserRepository userRepository,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
-			RealtimeEventPublisher realtimeEventPublisher) {
+			RealtimeEventPublisher realtimeEventPublisher,
+			NotificationEventPublisher notificationEventPublisher) {
 		this.conversationRepository = conversationRepository;
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.messageRepository = messageRepository;
@@ -58,6 +62,7 @@ public class ConversationService {
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
+		this.notificationEventPublisher = notificationEventPublisher;
 	}
 
 	@Transactional
@@ -117,6 +122,17 @@ public class ConversationService {
 				actorUserId,
 				null,
 				Map.of("conversationId", updated.id())));
+		Set<UUID> recipientIds = new LinkedHashSet<>(memberIds(updated.id()));
+		if (name != null && !name.equals(conversation.name())) {
+			notificationEventPublisher.publish(NotificationEvent.groupNameChanged(
+					actorUserId,
+					updated.id(),
+					recipientIds,
+					"Tên nhóm đã được đổi thành " + updated.name()));
+		}
+		if (avatarUrl != null && !avatarUrl.equals(conversation.avatarUrl())) {
+			notificationEventPublisher.publish(NotificationEvent.groupAvatarChanged(actorUserId, updated.id(), recipientIds));
+		}
 		return toResponse(actorUserId, updated);
 	}
 
@@ -163,6 +179,7 @@ public class ConversationService {
 				actorUserId,
 				null,
 				Map.of("userIds", userIds.toString())));
+		notificationEventPublisher.publish(NotificationEvent.groupMemberAdded(actorUserId, conversation.id(), userIds));
 		return toResponse(actorUserId, conversation);
 	}
 
@@ -199,6 +216,7 @@ public class ConversationService {
 				actorUserId,
 				userId,
 				Map.of("userId", userId)));
+		notificationEventPublisher.publish(NotificationEvent.groupMemberRemoved(actorUserId, conversation.id(), userId));
 		return toResponse(actorUserId, conversation);
 	}
 
@@ -387,6 +405,13 @@ public class ConversationService {
 					null,
 					null,
 					false));
+			}
+			if ("GROUP".equals(conversation.type())) {
+				notificationEventPublisher.publish(NotificationEvent.groupCreated(
+						actorUserId,
+						conversation.id(),
+						new LinkedHashSet<>(memberIds),
+						"Bạn được thêm vào nhóm " + conversation.name()));
 			}
 			return toResponse(actorUserId, conversation);
 		}

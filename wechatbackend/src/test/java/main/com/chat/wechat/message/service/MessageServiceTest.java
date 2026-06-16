@@ -15,6 +15,7 @@ import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.model.MessageAttachment;
 import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
@@ -70,6 +71,9 @@ class MessageServiceTest {
 	@Mock
 	private RealtimeEventPublisher realtimeEventPublisher;
 
+	@Mock
+	private NotificationEventPublisher notificationEventPublisher;
+
 	private MessageService messageService;
 
 	@BeforeEach
@@ -82,7 +86,8 @@ class MessageServiceTest {
 				userRepository,
 				auditLogService,
 				auditJsonWriter,
-				realtimeEventPublisher);
+				realtimeEventPublisher,
+				notificationEventPublisher);
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 	}
 

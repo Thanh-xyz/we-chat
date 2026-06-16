@@ -24,6 +24,8 @@ import java.util.regex.Pattern;
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 	private static final Pattern CONVERSATION_DESTINATION_PATTERN = Pattern.compile(
 			"^/(topic|queue|app)/conversations/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?$");
+	private static final Pattern USER_NOTIFICATION_DESTINATION_PATTERN = Pattern.compile(
+			"^/topic/users/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/notifications$");
 
 	private final JwtTokenService jwtTokenService;
 	private final UserRepository userRepository;
@@ -56,6 +58,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		}
 		if (accessor.getCommand() == StompCommand.SUBSCRIBE || accessor.getCommand() == StompCommand.SEND) {
 			authorizeConversationDestination(accessor);
+			authorizeUserNotificationDestination(accessor);
 		}
 		return message;
 	}
@@ -105,6 +108,30 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 			return null;
 		}
 		return UUID.fromString(matcher.group(2));
+	}
+
+	private void authorizeUserNotificationDestination(StompHeaderAccessor accessor) {
+		UUID userId = userIdFromNotificationDestination(accessor.getDestination());
+		if (userId == null) {
+			return;
+		}
+		if (!(accessor.getUser() instanceof WebSocketUserPrincipal principal)) {
+			throw new AccessDeniedException("WebSocket authentication required");
+		}
+		if (!principal.userId().equals(userId)) {
+			throw new AccessDeniedException("Users can only subscribe to their own notification topic");
+		}
+	}
+
+	private UUID userIdFromNotificationDestination(String destination) {
+		if (!StringUtils.hasText(destination)) {
+			return null;
+		}
+		Matcher matcher = USER_NOTIFICATION_DESTINATION_PATTERN.matcher(destination);
+		if (!matcher.matches()) {
+			return null;
+		}
+		return UUID.fromString(matcher.group(1));
 	}
 
 	private String resolveBearerToken(StompHeaderAccessor accessor) {

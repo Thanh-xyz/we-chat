@@ -12,6 +12,7 @@ import java.util.UUID;
 @Service
 public class RealtimeEventPublisher {
 	private static final String USER_CONVERSATION_EVENTS_DESTINATION = "/queue/conversation-events";
+	private static final String USER_NOTIFICATION_TOPIC_TEMPLATE = "/topic/users/%s/notifications";
 
 	private final SimpMessagingTemplate messagingTemplate;
 
@@ -32,6 +33,12 @@ public class RealtimeEventPublisher {
 		runAfterCommit(() -> messagingTemplate.convertAndSendToUser(
 				userId.toString(),
 				USER_CONVERSATION_EVENTS_DESTINATION,
+				event));
+	}
+
+	public void publishNotificationToUserAfterCommit(UUID userId, Object event) {
+		runAfterCommit(() -> messagingTemplate.convertAndSend(
+				USER_NOTIFICATION_TOPIC_TEMPLATE.formatted(userId),
 				event));
 	}
 

@@ -13,6 +13,7 @@ import main.com.chat.wechat.conversation.model.DirectConversationPair;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
@@ -66,6 +67,9 @@ class ConversationServiceTest {
 	@Mock
 	private RealtimeEventPublisher realtimeEventPublisher;
 
+	@Mock
+	private NotificationEventPublisher notificationEventPublisher;
+
 	private ConversationService conversationService;
 
 	@BeforeEach
@@ -77,7 +81,8 @@ class ConversationServiceTest {
 				userRepository,
 				auditLogService,
 				auditJsonWriter,
-				realtimeEventPublisher);
+				realtimeEventPublisher,
+				notificationEventPublisher);
 		lenient().when(messageRepository.countUnreadByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 		lenient().when(conversationMemberRepository.findActiveMember(any(UUID.class), any(UUID.class)))
