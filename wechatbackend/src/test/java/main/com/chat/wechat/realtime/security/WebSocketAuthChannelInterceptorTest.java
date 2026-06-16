@@ -25,6 +25,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class WebSocketAuthChannelInterceptorTest {
 	private static final UUID USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+	private static final UUID OTHER_USER_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
 	private static final UUID CONVERSATION_ID = UUID.fromString("00000000-0000-0000-0000-000000000010");
 
 	@Mock
@@ -110,6 +111,30 @@ class WebSocketAuthChannelInterceptorTest {
 		assertThatThrownBy(() -> interceptor.preSend(message, null))
 				.isInstanceOf(AccessDeniedException.class)
 				.hasMessage("WebSocket message rate limit exceeded");
+	}
+
+	@Test
+	void subscribeAllowsOwnNotificationTopic() {
+		Message<byte[]> message = stompMessage(
+				StompCommand.SUBSCRIBE,
+				"/topic/users/" + USER_ID + "/notifications",
+				USER_ID);
+
+		Message<?> response = interceptor.preSend(message, null);
+
+		assertThat(response).isSameAs(message);
+	}
+
+	@Test
+	void subscribeRejectsOtherUsersNotificationTopic() {
+		Message<byte[]> message = stompMessage(
+				StompCommand.SUBSCRIBE,
+				"/topic/users/" + OTHER_USER_ID + "/notifications",
+				USER_ID);
+
+		assertThatThrownBy(() -> interceptor.preSend(message, null))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("Users can only subscribe to their own notification topic");
 	}
 
 	private Message<byte[]> stompMessage(StompCommand command, String destination, UUID userId) {

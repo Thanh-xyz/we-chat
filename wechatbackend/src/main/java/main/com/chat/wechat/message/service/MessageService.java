@@ -15,6 +15,8 @@ import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.model.MessageAttachment;
 import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.event.NotificationEvent;
+import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.dto.RealtimeEvent;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
@@ -47,6 +49,7 @@ public class MessageService {
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
+	private final NotificationEventPublisher notificationEventPublisher;
 
 	public MessageService(
 			ConversationService conversationService,
@@ -56,7 +59,8 @@ public class MessageService {
 			UserRepository userRepository,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
-			RealtimeEventPublisher realtimeEventPublisher) {
+			RealtimeEventPublisher realtimeEventPublisher,
+			NotificationEventPublisher notificationEventPublisher) {
 		this.conversationService = conversationService;
 		this.conversationRepository = conversationRepository;
 		this.messageRepository = messageRepository;
@@ -65,6 +69,7 @@ public class MessageService {
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
+		this.notificationEventPublisher = notificationEventPublisher;
 	}
 
 	@Transactional
@@ -103,6 +108,7 @@ public class MessageService {
 				RealtimeEvent.of("message.created", conversation.id(), message.id(), actorUserId, null, Map.of(
 						"messageId", message.id(),
 						"attachments", response.attachments())));
+		notificationEventPublisher.publish(NotificationEvent.messageCreated(actorUserId, conversation.id(), message.id(), content));
 		publishUnreadUpdates(conversation.id(), actorUserId);
 		return response;
 	}
@@ -209,6 +215,7 @@ public class MessageService {
 		publishConversationEvent(
 				message.conversationId(),
 				RealtimeEvent.of("message.reaction.added", message.conversationId(), message.id(), actorUserId, null, Map.of("messageId", message.id(), "emoji", emoji)));
+		notificationEventPublisher.publish(NotificationEvent.messageReaction(actorUserId, message.conversationId(), message.id(), message.senderId(), emoji));
 		return reactions;
 	}
 

@@ -10,6 +10,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -116,6 +117,21 @@ public class UserRepository {
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
+	}
+
+	public List<User> findActiveByUsernames(List<String> usernames) {
+		if (usernames == null || usernames.isEmpty()) {
+			return Collections.emptyList();
+		}
+		return jdbcTemplate.query("""
+				select *
+				from users
+				where lower(username) in (%s)
+				  and account_status = 'ACTIVE'
+				  and deleted_at is null
+				""".formatted(placeholders(usernames.size())),
+				rowMapper(),
+				usernames.stream().map(String::toLowerCase).toArray());
 	}
 
 	public List<User> findAllForAdmin(String search, String accountStatus, int limit, int offset) {
@@ -256,6 +272,10 @@ public class UserRepository {
 
 	private Timestamp toTimestamp(Instant instant) {
 		return instant == null ? null : Timestamp.from(instant);
+	}
+
+	private String placeholders(int count) {
+		return String.join(",", Collections.nCopies(count, "?"));
 	}
 
 	private Instant toInstant(ResultSet rs, String column) throws SQLException {
