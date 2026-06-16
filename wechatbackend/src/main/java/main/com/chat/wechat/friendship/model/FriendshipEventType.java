@@ -1,0 +1,11 @@
+package main.com.chat.wechat.friendship.model;
+
+public enum FriendshipEventType {
+	FRIEND_REQUEST_SENT,
+	FRIEND_REQUEST_ACCEPTED,
+	FRIEND_REQUEST_DECLINED,
+	FRIEND_REQUEST_CANCELLED,
+	FRIEND_REMOVED,
+	USER_BLOCKED,
+	USER_UNBLOCKED
+}

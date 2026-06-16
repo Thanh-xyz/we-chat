@@ -11,7 +11,9 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -117,6 +119,42 @@ public class UserRepository {
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
+	}
+
+	public Map<UUID, User> findByIds(List<UUID> ids) {
+		if (ids == null || ids.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<UUID, User> result = new LinkedHashMap<>();
+		jdbcTemplate.query("""
+				select *
+				from users
+				where id in (%s)
+				""".formatted(placeholders(ids.size())),
+				rs -> {
+					User user = mapUser(rs);
+					result.put(user.id(), user);
+				},
+				ids.toArray());
+		return result;
+	}
+
+	public List<User> searchActiveUsers(UUID actorUserId, String query, int limit, int offset) {
+		if (query == null || query.isBlank()) {
+			return Collections.emptyList();
+		}
+		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
+		return jdbcTemplate.query("""
+				select *
+				from users
+				where id <> ?
+				  and account_status = 'ACTIVE'
+				  and enabled = true
+				  and deleted_at is null
+				  and (lower(username) like ? or lower(display_name) like ? or lower(email) like ?)
+				order by display_name, username
+				limit ? offset ?
+				""", rowMapper(), actorUserId, normalizedQuery, normalizedQuery, normalizedQuery, limit, offset);
 	}
 
 	public List<User> findActiveByUsernames(List<String> usernames) {

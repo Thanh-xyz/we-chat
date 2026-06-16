@@ -6,6 +6,7 @@ import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.model.Conversation;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.conversation.service.ConversationService;
+import main.com.chat.wechat.friendship.service.FriendshipService;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
 import main.com.chat.wechat.message.dto.EditMessageRequest;
 import main.com.chat.wechat.message.dto.MessageReactionResponse;
@@ -46,6 +47,7 @@ public class MessageService {
 	private final MessageRepository messageRepository;
 	private final MessageAttachmentRepository messageAttachmentRepository;
 	private final UserRepository userRepository;
+	private final FriendshipService friendshipService;
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
@@ -57,6 +59,7 @@ public class MessageService {
 			MessageRepository messageRepository,
 			MessageAttachmentRepository messageAttachmentRepository,
 			UserRepository userRepository,
+			FriendshipService friendshipService,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
 			RealtimeEventPublisher realtimeEventPublisher,
@@ -66,6 +69,7 @@ public class MessageService {
 		this.messageRepository = messageRepository;
 		this.messageAttachmentRepository = messageAttachmentRepository;
 		this.userRepository = userRepository;
+		this.friendshipService = friendshipService;
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
@@ -76,6 +80,7 @@ public class MessageService {
 	public MessageResponse send(UUID actorUserId, UUID conversationId, CreateMessageRequest request) {
 		findActiveUser(actorUserId);
 		Conversation conversation = conversationService.findAccessibleConversation(actorUserId, conversationId);
+		requireCanSendInConversation(actorUserId, conversation);
 		String messageType = normalizeClientMessageType(request.messageType());
 		String content = normalizeContent(messageType, request.content());
 		List<MessageAttachment> pendingAttachments = resolvePendingAttachments(actorUserId, conversation.id(), messageType, request);
@@ -255,6 +260,18 @@ public class MessageService {
 				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Message not found"));
 		conversationService.findAccessibleConversation(actorUserId, message.conversationId());
 		return message;
+	}
+
+	private void requireCanSendInConversation(UUID actorUserId, Conversation conversation) {
+		if (!"DIRECT".equals(conversation.type())) {
+			return;
+		}
+		List<UUID> memberIds = conversationService.memberIds(conversation.id());
+		UUID otherUserId = memberIds.stream()
+				.filter(userId -> !userId.equals(actorUserId))
+				.findFirst()
+				.orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Direct conversation is missing the other member"));
+		friendshipService.requireCanDirectMessage(actorUserId, otherUserId);
 	}
 
 	private List<MessageResponse> toResponses(UUID actorUserId, List<Message> messages) {

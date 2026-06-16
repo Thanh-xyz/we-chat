@@ -15,6 +15,8 @@ import main.com.chat.wechat.conversation.model.ConversationMember;
 import main.com.chat.wechat.conversation.model.DirectConversationPair;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
+import main.com.chat.wechat.friendship.repository.FriendshipRepository;
+import main.com.chat.wechat.friendship.repository.UserBlockRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
 import main.com.chat.wechat.notification.event.NotificationEvent;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
@@ -41,6 +43,8 @@ public class ConversationService {
 	private final ConversationMemberRepository conversationMemberRepository;
 	private final MessageRepository messageRepository;
 	private final UserRepository userRepository;
+	private final FriendshipRepository friendshipRepository;
+	private final UserBlockRepository userBlockRepository;
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
@@ -51,6 +55,8 @@ public class ConversationService {
 			ConversationMemberRepository conversationMemberRepository,
 			MessageRepository messageRepository,
 			UserRepository userRepository,
+			FriendshipRepository friendshipRepository,
+			UserBlockRepository userBlockRepository,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
 			RealtimeEventPublisher realtimeEventPublisher,
@@ -59,6 +65,8 @@ public class ConversationService {
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.messageRepository = messageRepository;
 		this.userRepository = userRepository;
+		this.friendshipRepository = friendshipRepository;
+		this.userBlockRepository = userBlockRepository;
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
@@ -79,6 +87,7 @@ public class ConversationService {
 			}
 			UUID otherUserId = requestedMemberIds.iterator().next();
 			findActiveUser(otherUserId);
+			requireDirectConversationAllowed(actorUserId, otherUserId);
 			DirectConversationPair pair = normalizeDirectConversationPair(actorUserId, otherUserId);
 			return conversationRepository.findDirectByPair(pair.userLowId(), pair.userHighId())
 					.map(conversation -> toResponse(actorUserId, conversation))
@@ -539,6 +548,15 @@ public class ConversationService {
 
 	private boolean isGroupManager(ConversationMember member) {
 		return "OWNER".equals(member.memberRole()) || "ADMIN".equals(member.memberRole());
+	}
+
+	private void requireDirectConversationAllowed(UUID actorUserId, UUID otherUserId) {
+		if (userBlockRepository.existsBlockBetween(actorUserId, otherUserId)) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "Direct conversations are not allowed between blocked users");
+		}
+		if (!friendshipRepository.existsActive(actorUserId, otherUserId)) {
+			throw new ApiException(HttpStatus.FORBIDDEN, "Direct conversations require an active friendship");
+		}
 	}
 
 	private void publishConversationEvent(UUID conversationId, RealtimeEvent event) {
