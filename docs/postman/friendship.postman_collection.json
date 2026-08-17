@@ -1,0 +1,265 @@
+{
+  "info": {
+    "name": "WebChat Phase 9 Friendship",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "userAToken",
+      "value": ""
+    },
+    {
+      "key": "userBToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "userAId",
+      "value": ""
+    },
+    {
+      "key": "userBId",
+      "value": ""
+    },
+    {
+      "key": "friendRequestId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. A sends friend request to B",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverId\": \"{{userBId}}\",\n  \"message\": \"Hello from A\"\n}"
+        },
+        "url": "{{baseUrl}}/api/friends/requests"
+      }
+    },
+    {
+      "name": "2. B sees incoming requests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userBToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/requests/incoming?limit=50&offset=0"
+      }
+    },
+    {
+      "name": "3. A sees outgoing requests",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/requests/outgoing?limit=50&offset=0"
+      }
+    },
+    {
+      "name": "4. B accepts request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userBToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/requests/{{friendRequestId}}/accept"
+      }
+    },
+    {
+      "name": "5. A lists friends",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends?limit=50&offset=0"
+      }
+    },
+    {
+      "name": "6. B lists friends",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userBToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends?limit=50&offset=0"
+      }
+    },
+    {
+      "name": "7. A unfriend B",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/{{userBId}}"
+      }
+    },
+    {
+      "name": "8. A sends request again",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverId\": \"{{userBId}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/friends/requests"
+      }
+    },
+    {
+      "name": "9. B declines request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userBToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/requests/{{friendRequestId}}/decline"
+      }
+    },
+    {
+      "name": "10. A cancels own pending request",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/requests/{{friendRequestId}}/cancel"
+      }
+    },
+    {
+      "name": "11. A blocks B",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"spam\"\n}"
+        },
+        "url": "{{baseUrl}}/api/friends/block/{{userBId}}"
+      }
+    },
+    {
+      "name": "12. B cannot request A while blocked",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userBToken}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"receiverId\": \"{{userAId}}\"\n}"
+        },
+        "url": "{{baseUrl}}/api/friends/requests"
+      }
+    },
+    {
+      "name": "13. A unblocks B",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/friends/block/{{userBId}}"
+      }
+    },
+    {
+      "name": "14. User search with relation status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/users/search?q=user&limit=50&offset=0"
+      }
+    },
+    {
+      "name": "15. Check audit for friendship",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userAToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?action=FRIEND_REQUEST_SENT&limit=20"
+      }
+    }
+  ]
+}

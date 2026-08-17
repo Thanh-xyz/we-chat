@@ -31,10 +31,10 @@ public class MessageAttachmentRepository {
 		jdbcTemplate.update("""
 				insert into message_attachments (
 				    id, message_id, uploader_id, conversation_id, original_file_name, storage_key,
-				    file_url, file_name, mime_type, file_type, file_size, checksum, scan_status,
+				    file_url, file_name, mime_type, file_type, file_category, file_size, checksum, scan_status,
 				    deleted_at, created_at, updated_at
 				)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 				attachment.id(),
 				attachment.messageId(),
@@ -46,6 +46,7 @@ public class MessageAttachmentRepository {
 				attachment.originalFileName(),
 				attachment.mimeType(),
 				attachment.fileType(),
+				fileCategory(attachment.fileType(), attachment.mimeType()),
 				attachment.fileSize(),
 				attachment.checksum(),
 				attachment.scanStatus(),
@@ -147,6 +148,17 @@ public class MessageAttachmentRepository {
 		return findById(attachmentId).orElseThrow();
 	}
 
+	public void updateMediaMetadata(UUID attachmentId, Integer width, Integer height, Integer durationSeconds, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set width = coalesce(?, width),
+				    height = coalesce(?, height),
+				    duration_seconds = coalesce(?, duration_seconds),
+				    updated_at = ?
+				where id = ? and deleted_at is null
+				""", width, height, durationSeconds, Timestamp.from(updatedAt), attachmentId);
+	}
+
 	public void softDelete(UUID attachmentId, Instant deletedAt) {
 		jdbcTemplate.update("""
 				update message_attachments
@@ -161,6 +173,15 @@ public class MessageAttachmentRepository {
 				set deleted_at = ?, updated_at = ?
 				where message_id = ? and deleted_at is null
 				""", Timestamp.from(deletedAt), Timestamp.from(deletedAt), messageId);
+	}
+
+	public void incrementDownloadCount(UUID attachmentId) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set download_count = coalesce(download_count, 0) + 1,
+				    updated_at = ?
+				where id = ? and deleted_at is null
+				""", Timestamp.from(Instant.now()), attachmentId);
 	}
 
 	private RowMapper<MessageAttachment> rowMapper() {
@@ -193,6 +214,24 @@ public class MessageAttachmentRepository {
 
 	private String firstNonBlank(String first, String second) {
 		return first != null && !first.isBlank() ? first : second;
+	}
+
+	private String fileCategory(String fileType, String mimeType) {
+		String normalizedType = fileType == null ? null : fileType.trim().toUpperCase();
+		if ("IMAGE".equals(normalizedType) || "VIDEO".equals(normalizedType) || "VOICE".equals(normalizedType) || "FILE".equals(normalizedType)) {
+			return normalizedType;
+		}
+		String normalizedMimeType = mimeType == null ? "" : mimeType.trim().toLowerCase();
+		if (normalizedMimeType.startsWith("image/")) {
+			return "IMAGE";
+		}
+		if (normalizedMimeType.startsWith("video/")) {
+			return "VIDEO";
+		}
+		if (normalizedMimeType.startsWith("audio/")) {
+			return "VOICE";
+		}
+		return "FILE";
 	}
 
 	private String placeholders(int count) {

@@ -24,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -105,6 +107,14 @@ public class AttachmentService {
 				now);
 		try {
 			messageAttachmentRepository.save(attachment);
+			if (validatedFile.dimensions() != null) {
+				messageAttachmentRepository.updateMediaMetadata(
+						attachment.id(),
+						validatedFile.dimensions().width(),
+						validatedFile.dimensions().height(),
+						null,
+						now);
+			}
 		} catch (RuntimeException exception) {
 			deleteStoredFileQuietly(storageKey);
 			throw exception;
@@ -115,6 +125,25 @@ public class AttachmentService {
 				attachment.id().toString(),
 				null,
 				auditJsonWriter.write(new AttachmentAuditValue(attachment.conversationId(), attachment.originalFileName(), attachment.fileType(), attachment.fileSize())));
+		auditLogService.logSuccess(
+				"MEDIA_UPLOAD",
+				"ATTACHMENT",
+				attachment.id().toString(),
+				null,
+				null,
+				auditJsonWriter.write(new AttachmentAuditValue(attachment.conversationId(), attachment.originalFileName(), attachment.fileType(), attachment.fileSize())));
+		realtimeEventPublisher.publishToMembersAfterCommit(
+				conversationService.memberIds(attachment.conversationId()),
+				RealtimeEvent.of(
+						"media.created",
+						attachment.conversationId(),
+						attachment.messageId(),
+						actorUserId,
+						null,
+						Map.of(
+								"conversationId", attachment.conversationId(),
+								"attachmentId", attachment.id(),
+								"category", attachment.fileType())));
 		return AttachmentUploadResponse.from(attachment);
 	}
 
@@ -130,6 +159,7 @@ public class AttachmentService {
 			throw new ApiException(HttpStatus.NOT_FOUND, "Attachment file not found");
 		}
 		try {
+			messageAttachmentRepository.incrementDownloadCount(attachment.id());
 			auditLogService.log(
 					"ATTACHMENT_DOWNLOAD",
 					"ATTACHMENT",
@@ -225,7 +255,8 @@ public class AttachmentService {
 			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type for " + fileType);
 		}
 		String checksum = checksum(file);
-		return new ValidatedFile(originalFileName, extension, mimeType, fileType, checksum);
+		ImageDimensions dimensions = imageDimensions(file, fileType);
+		return new ValidatedFile(originalFileName, extension, mimeType, fileType, checksum, dimensions);
 	}
 
 	private String safeOriginalFileName(String submittedFileName) {
@@ -383,6 +414,21 @@ public class AttachmentService {
 		}
 	}
 
+	private ImageDimensions imageDimensions(MultipartFile file, String fileType) {
+		if (!"IMAGE".equals(fileType)) {
+			return null;
+		}
+		try (InputStream inputStream = file.getInputStream()) {
+			BufferedImage image = ImageIO.read(inputStream);
+			if (image == null) {
+				throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Invalid image content");
+			}
+			return new ImageDimensions(image.getWidth(), image.getHeight());
+		} catch (IOException exception) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "Could not read image metadata");
+		}
+	}
+
 	private String storageKey(UUID conversationId, UUID attachmentId, String extension, Instant now) {
 		return "attachments/%s/%s/%s.%s".formatted(
 				conversationId,
@@ -403,7 +449,11 @@ public class AttachmentService {
 			String extension,
 			String mimeType,
 			String fileType,
-			String checksum) {
+			String checksum,
+			ImageDimensions dimensions) {
+	}
+
+	private record ImageDimensions(Integer width, Integer height) {
 	}
 
 	private record AttachmentAuditValue(UUID conversationId, String fileName, String fileType, Long fileSize) {

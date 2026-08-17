@@ -1,0 +1,153 @@
+{
+  "info": {
+    "name": "WebChat Phase 10 - Media Gallery",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "accessToken", "value": "" },
+    { "key": "conversationId", "value": "" },
+    { "key": "attachmentId", "value": "" },
+    { "key": "uploaderId", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{accessToken}}", "type": "string" }
+    ]
+  },
+  "item": [
+    {
+      "name": "Upload Image (existing Attachment API)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "conversationId", "value": "{{conversationId}}", "type": "text" },
+            { "key": "fileType", "value": "IMAGE", "type": "text" },
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/attachments/upload"
+      }
+    },
+    {
+      "name": "Upload File (existing Attachment API)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "conversationId", "value": "{{conversationId}}", "type": "text" },
+            { "key": "fileType", "value": "FILE", "type": "text" },
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/attachments/upload"
+      }
+    },
+    {
+      "name": "Upload Voice (existing Attachment API)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "conversationId", "value": "{{conversationId}}", "type": "text" },
+            { "key": "fileType", "value": "VOICE", "type": "text" },
+            { "key": "file", "type": "file", "src": "" }
+          ]
+        },
+        "url": "{{baseUrl}}/api/attachments/upload"
+      }
+    },
+    {
+      "name": "List Media",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media?limit=20&offset=0"
+      }
+    },
+    {
+      "name": "List Images",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media/images?limit=20&offset=0"
+      }
+    },
+    {
+      "name": "List Files",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media/files?limit=20&offset=0"
+      }
+    },
+    {
+      "name": "List Voices",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media/voices?limit=20&offset=0"
+      }
+    },
+    {
+      "name": "Search Media",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media/search?fileName=report&category=FILE&limit=20&offset=0"
+      }
+    },
+    {
+      "name": "Media Detail",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/media/{{attachmentId}}"
+      }
+    },
+    {
+      "name": "Media Preview Metadata",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/media/{{attachmentId}}/preview"
+      }
+    },
+    {
+      "name": "Download Media",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/media/{{attachmentId}}/download"
+      }
+    },
+    {
+      "name": "Media Statistics",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/conversations/{{conversationId}}/media/stats"
+      }
+    },
+    {
+      "name": "Delete Media",
+      "request": {
+        "method": "DELETE",
+        "url": "{{baseUrl}}/api/media/{{attachmentId}}"
+      }
+    },
+    {
+      "name": "Permission Denied - Use Non-member Token",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/media/{{attachmentId}}/download"
+      }
+    },
+    {
+      "name": "Audit Logs - Media Actions",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/admin/audit-logs?action=MEDIA_DOWNLOAD&limit=20&offset=0"
+      }
+    }
+  ]
+}
