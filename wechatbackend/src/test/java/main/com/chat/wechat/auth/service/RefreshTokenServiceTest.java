@@ -36,6 +36,7 @@ class RefreshTokenServiceTest {
 				new JwtProperties("test-secret-test-secret-test-secret-1234", "wechat-test", Duration.ofMinutes(15), Duration.ofDays(30)));
 		Instant now = Instant.parse("2026-06-10T10:00:00Z");
 		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.setRemoteAddr("10.0.0.10");
 		request.addHeader("User-Agent", "JUnit");
 		request.addHeader("X-Forwarded-For", "203.0.113.10, 10.0.0.2");
 		when(refreshTokenGenerator.generate()).thenReturn("raw-token");
@@ -51,7 +52,7 @@ class RefreshTokenServiceTest {
 		assertThat(stored.tokenHash()).isEqualTo("token-hash");
 		assertThat(stored.tokenHash()).isNotEqualTo("raw-token");
 		assertThat(stored.deviceInfo()).isEqualTo("JUnit");
-		assertThat(stored.ipAddress()).isEqualTo("203.0.113.10");
+		assertThat(stored.ipAddress()).isEqualTo("10.0.0.10");
 		assertThat(stored.expiresAt()).isEqualTo(now.plus(Duration.ofDays(30)));
 	}
 }

@@ -75,10 +75,6 @@ public class RefreshTokenService {
 		if (request == null) {
 			return null;
 		}
-		String forwardedFor = request.getHeader("X-Forwarded-For");
-		if (StringUtils.hasText(forwardedFor)) {
-			return forwardedFor.split(",")[0].trim();
-		}
 		return request.getRemoteAddr();
 	}
 

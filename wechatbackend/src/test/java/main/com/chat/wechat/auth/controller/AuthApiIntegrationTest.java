@@ -1,8 +1,14 @@
 package main.com.chat.wechat.auth.controller;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxyUtil;
+import ch.qos.logback.core.read.ListAppender;
 import main.com.chat.wechat.auth.service.AuthEmailService;
+import main.com.chat.wechat.auth.service.RefreshTokenGenerator;
 import main.com.chat.wechat.user.model.User;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -11,12 +17,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.util.Map;
 import java.util.UUID;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import static com.jayway.jsonpath.JsonPath.read;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +53,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 		"app.rate-limit.auth-resend-verification.capacity=200"
 })
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class AuthApiIntegrationTest {
 	private static final String PASSWORD = "Password@123";
 	private static final String NEW_PASSWORD = "Password@456";
@@ -52,9 +64,16 @@ class AuthApiIntegrationTest {
 	@Autowired
 	private CapturingAuthEmailService emailService;
 
+	@Autowired
+	private JdbcTemplate jdbcTemplate;
+
+	@Autowired
+	private RefreshTokenGenerator refreshTokenGenerator;
+
 	@Test
 	void registerCreatesUserDefaultRoleAndVerificationToken() throws Exception {
 		Account account = newAccount("register");
+		Instant beforeRegistration = Instant.now();
 
 		mockMvc.perform(post("/api/auth/register")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -65,6 +84,8 @@ class AuthApiIntegrationTest {
 				.andExpect(jsonPath("$.emailVerified").value(false));
 
 		assertThat(emailService.verificationToken(account.email())).isNotBlank();
+		assertThat(Duration.between(beforeRegistration, emailService.verificationExpiresAt(account.email())))
+				.isBetween(Duration.ofHours(23).plusMinutes(59), Duration.ofHours(24).plusMinutes(1));
 	}
 
 	@Test
@@ -140,6 +161,14 @@ class AuthApiIntegrationTest {
 	}
 
 	@Test
+	void malformedAccessTokenCannotAuthenticateAnHttpRequest() throws Exception {
+		mockMvc.perform(post("/api/auth/logout-all")
+						.header(HttpHeaders.AUTHORIZATION, "Bearer a.b.c"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.message").value("Authentication required"));
+	}
+
+	@Test
 	void forgotPasswordDoesNotLeakAndResetPasswordRevokesOldCredentials() throws Exception {
 		Account account = register("reset");
 
@@ -148,6 +177,7 @@ class AuthApiIntegrationTest {
 						.content(emailJson("missing-" + account.email())))
 				.andExpect(status().isAccepted());
 
+		Instant beforeResetRequest = Instant.now();
 		mockMvc.perform(post("/api/auth/forgot-password")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(emailJson(account.email())))
@@ -155,11 +185,18 @@ class AuthApiIntegrationTest {
 
 		String resetToken = emailService.resetToken(account.email());
 		assertThat(resetToken).isNotBlank();
+		assertThat(Duration.between(beforeResetRequest, emailService.resetExpiresAt(account.email())))
+				.isBetween(Duration.ofMinutes(14), Duration.ofMinutes(16));
 
 		mockMvc.perform(post("/api/auth/reset-password")
 						.contentType(MediaType.APPLICATION_JSON)
 						.content(resetPasswordJson(resetToken, NEW_PASSWORD)))
 				.andExpect(status().isNoContent());
+
+		mockMvc.perform(post("/api/auth/reset-password")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(resetPasswordJson(resetToken, "Password@789")))
+				.andExpect(status().isBadRequest());
 
 		mockMvc.perform(post("/api/auth/login")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -216,6 +253,116 @@ class AuthApiIntegrationTest {
 	}
 
 	@Test
+	void expiredAndInvalidVerificationTokensAreRejected() throws Exception {
+		Account account = register("verifyexpired");
+		String expiredToken = emailService.verificationToken(account.email());
+		jdbcTemplate.update(
+				"update email_verification_tokens set expires_at = ? where token_hash = ?",
+				Timestamp.from(Instant.now().minusSeconds(1)),
+				refreshTokenGenerator.hash(expiredToken));
+
+		mockMvc.perform(post("/api/auth/verify-email")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(tokenJson(expiredToken)))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(post("/api/auth/verify-email")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(tokenJson("invalid-verification-token")))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void expiredAndInvalidPasswordResetTokensAreRejected() throws Exception {
+		Account account = register("resetexpired");
+		mockMvc.perform(post("/api/auth/forgot-password")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(emailJson(account.email())))
+				.andExpect(status().isAccepted());
+		String expiredToken = emailService.resetToken(account.email());
+		jdbcTemplate.update(
+				"update password_reset_tokens set expires_at = ? where token_hash = ?",
+				Timestamp.from(Instant.now().minusSeconds(1)),
+				refreshTokenGenerator.hash(expiredToken));
+
+		mockMvc.perform(post("/api/auth/reset-password")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(resetPasswordJson(expiredToken, NEW_PASSWORD)))
+				.andExpect(status().isBadRequest());
+
+		mockMvc.perform(post("/api/auth/reset-password")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(resetPasswordJson("invalid-reset-token", NEW_PASSWORD)))
+				.andExpect(status().isBadRequest());
+	}
+
+	@Test
+	void authFlowsDoNotWriteCredentialsToLogs() throws Exception {
+		Account account = newAccount("safelog");
+		Logger rootLogger = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		rootLogger.addAppender(appender);
+
+		String verificationToken;
+		String resetToken;
+		String passwordHash;
+		TokenPair login;
+		TokenPair rotated;
+		try {
+			mockMvc.perform(post("/api/auth/register")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(registerJson(account)))
+				.andExpect(status().isCreated());
+			verificationToken = emailService.verificationToken(account.email());
+
+			mockMvc.perform(post("/api/auth/forgot-password")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(emailJson(account.email())))
+				.andExpect(status().isAccepted());
+			resetToken = emailService.resetToken(account.email());
+			passwordHash = jdbcTemplate.queryForObject(
+					"select password_hash from users where email = ?",
+					String.class,
+					account.email());
+			login = login(account.email(), account.password());
+
+			String refreshResponse = mockMvc.perform(post("/api/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(refreshJson(login.refreshToken())))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+			rotated = tokens(refreshResponse);
+			mockMvc.perform(post("/api/auth/logout-all")
+						.header(HttpHeaders.AUTHORIZATION, bearer(login.accessToken())))
+				.andExpect(status().isNoContent());
+		} finally {
+			rootLogger.detachAppender(appender);
+			appender.stop();
+		}
+
+		String logs = renderedLogs(appender);
+		assertThat(verificationToken).isNotBlank();
+		assertThat(resetToken).isNotBlank();
+		assertThat(passwordHash).isNotBlank();
+		assertThat(logs).doesNotContain(
+				verificationToken,
+				"http://localhost:5173/verify-email?token=" + verificationToken,
+				resetToken,
+				"http://localhost:5173/reset-password?token=" + resetToken,
+				login.refreshToken(),
+				login.accessToken(),
+				bearer(login.accessToken()),
+				"Authorization: " + bearer(login.accessToken()),
+				rotated.refreshToken(),
+				rotated.accessToken(),
+				account.password(),
+				passwordHash);
+	}
+
+	@Test
 	void changePasswordRevokesAllRefreshTokensAndRequiresNewPassword() throws Exception {
 		Account account = register("change");
 		TokenPair login = login(account.email(), account.password());
@@ -247,6 +394,13 @@ class AuthApiIntegrationTest {
 						.content(registerJson(account)))
 				.andExpect(status().isCreated());
 		return account;
+	}
+
+	private String renderedLogs(ListAppender<ILoggingEvent> appender) {
+		return appender.list.stream()
+				.map(event -> event.getFormattedMessage()
+						+ (event.getThrowableProxy() == null ? "" : ThrowableProxyUtil.asString(event.getThrowableProxy())))
+				.collect(Collectors.joining("\n"));
 	}
 
 	private TokenPair login(String identifier, String password) throws Exception {
@@ -333,15 +487,19 @@ class AuthApiIntegrationTest {
 	static class CapturingAuthEmailService implements AuthEmailService {
 		private final Map<String, String> verificationTokensByEmail = new ConcurrentHashMap<>();
 		private final Map<String, String> resetTokensByEmail = new ConcurrentHashMap<>();
+		private final Map<String, Instant> verificationExpiryByEmail = new ConcurrentHashMap<>();
+		private final Map<String, Instant> resetExpiryByEmail = new ConcurrentHashMap<>();
 
 		@Override
 		public void sendVerificationEmail(User user, String token, Instant expiresAt) {
 			verificationTokensByEmail.put(user.email(), token);
+			verificationExpiryByEmail.put(user.email(), expiresAt);
 		}
 
 		@Override
 		public void sendPasswordResetEmail(User user, String token, Instant expiresAt) {
 			resetTokensByEmail.put(user.email(), token);
+			resetExpiryByEmail.put(user.email(), expiresAt);
 		}
 
 		String verificationToken(String email) {
@@ -350,6 +508,14 @@ class AuthApiIntegrationTest {
 
 		String resetToken(String email) {
 			return resetTokensByEmail.get(email);
+		}
+
+		Instant verificationExpiresAt(String email) {
+			return verificationExpiryByEmail.get(email);
+		}
+
+		Instant resetExpiresAt(String email) {
+			return resetExpiryByEmail.get(email);
 		}
 	}
 }

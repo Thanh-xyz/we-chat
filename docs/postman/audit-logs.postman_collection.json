@@ -1,0 +1,159 @@
+{
+  "info": {
+    "name": "WebChat Phase 8 Audit Logging",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "adminToken",
+      "value": ""
+    },
+    {
+      "key": "userToken",
+      "value": ""
+    },
+    {
+      "key": "auditLogId",
+      "value": ""
+    },
+    {
+      "key": "actorUserId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Admin list audit logs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          },
+          {
+            "key": "X-Request-Id",
+            "value": "postman-audit-list"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?limit=50&offset=0"
+      }
+    },
+    {
+      "name": "Regular user is forbidden",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{userToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?limit=10"
+      }
+    },
+    {
+      "name": "Filter by action",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?action=MESSAGE_EDIT&limit=20"
+      }
+    },
+    {
+      "name": "Filter by actor",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?actorUserId={{actorUserId}}&limit=20"
+      }
+    },
+    {
+      "name": "Filter by time range",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?from=2026-06-01T00:00:00Z&to=2026-06-16T23:59:59Z&limit=100"
+      }
+    },
+    {
+      "name": "Audit detail",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs/{{auditLogId}}"
+      }
+    },
+    {
+      "name": "Export CSV",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs/export?from=2026-06-01T00:00:00Z&to=2026-06-16T23:59:59Z&limit=10000"
+      }
+    },
+    {
+      "name": "Failed login creates AUTH_LOGIN_FAILED",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Request-Id",
+            "value": "postman-login-fail"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"identifier\": \"missing@example.com\",\n  \"password\": \"WrongPassword@123\"\n}"
+        },
+        "url": "{{baseUrl}}/api/auth/login"
+      }
+    },
+    {
+      "name": "Verify failed login audit",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{adminToken}}"
+          }
+        ],
+        "url": "{{baseUrl}}/api/admin/audit-logs?action=AUTH_LOGIN_FAILED&result=FAILED&limit=10"
+      }
+    }
+  ]
+}
