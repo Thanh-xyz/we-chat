@@ -2,6 +2,9 @@ package main.com.chat.wechat.common.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import main.com.chat.wechat.audit.service.AuditLogService;
+import main.com.chat.wechat.audit.service.RequestContextProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
@@ -19,11 +22,14 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+	private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
 	private AuditLogService auditLogService;
 
 	@Autowired
@@ -96,6 +102,12 @@ public class GlobalExceptionHandler {
 
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ErrorResponse> handleUnhandled(Exception exception, HttpServletRequest request) {
+		LOGGER.error(
+				"Unhandled request failed requestId={} path={} exceptionClass={} stackTrace={}",
+				request.getAttribute(RequestContextProvider.REQUEST_ID_ATTRIBUTE),
+				request.getRequestURI(),
+				exception.getClass().getName(),
+				Arrays.toString(exception.getStackTrace()));
 		return build(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error", request, null);
 	}
 

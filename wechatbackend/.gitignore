@@ -24,6 +24,7 @@ application-local.properties
 application-*.local.properties
 application-secret.properties
 application-secrets.properties
+!src/main/resources/application-local.properties
 
 # Secrets, keys and certificates
 *.pem

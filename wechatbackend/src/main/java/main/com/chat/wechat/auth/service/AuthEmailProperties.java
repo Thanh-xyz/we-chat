@@ -9,10 +9,10 @@ public record AuthEmailProperties(
 
 	public AuthEmailProperties {
 		if (emailVerificationUrl == null || emailVerificationUrl.isBlank()) {
-			emailVerificationUrl = "http://localhost:5173/verify-email?token=";
+			throw new IllegalArgumentException("app.auth.email-verification-url must be configured");
 		}
 		if (passwordResetUrl == null || passwordResetUrl.isBlank()) {
-			passwordResetUrl = "http://localhost:5173/reset-password?token=";
+			throw new IllegalArgumentException("app.auth.password-reset-url must be configured");
 		}
 	}
 }

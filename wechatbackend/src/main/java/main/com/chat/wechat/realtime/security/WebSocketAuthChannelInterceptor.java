@@ -16,6 +16,8 @@ import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,8 +26,10 @@ import java.util.regex.Pattern;
 public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 	private static final Pattern CONVERSATION_DESTINATION_PATTERN = Pattern.compile(
 			"^/(topic|queue|app)/conversations/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(/.*)?$");
-	private static final Pattern USER_NOTIFICATION_DESTINATION_PATTERN = Pattern.compile(
-			"^/topic/users/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})/notifications$");
+	private static final Pattern USER_DESTINATION_PATTERN = Pattern.compile(
+			"^/topic/users/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})(?:/(.*))?$");
+	private static final String USER_TOPIC_PREFIX = "/topic/users";
+	private static final String USER_CONVERSATION_EVENTS_DESTINATION = "/user/queue/conversation-events";
 
 	private final JwtTokenService jwtTokenService;
 	private final UserRepository userRepository;
@@ -57,8 +61,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 			return message;
 		}
 		if (accessor.getCommand() == StompCommand.SUBSCRIBE || accessor.getCommand() == StompCommand.SEND) {
+			requireAuthenticatedUser(accessor);
 			authorizeConversationDestination(accessor);
-			authorizeUserNotificationDestination(accessor);
+			authorizeUserDestination(accessor);
+			validateSubscriptionDestination(accessor);
 		}
 		return message;
 	}
@@ -87,9 +93,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		if (conversationId == null) {
 			return;
 		}
-		if (!(accessor.getUser() instanceof WebSocketUserPrincipal principal)) {
-			throw new AccessDeniedException("WebSocket authentication required");
-		}
+		WebSocketUserPrincipal principal = authenticatedPrincipal(accessor);
 		if (accessor.getCommand() == StompCommand.SEND
 				&& !rateLimiter.tryConsume("ws-message-send", principal.userId().toString(), rateLimitProperties.messageSend())) {
 			throw new AccessDeniedException("WebSocket message rate limit exceeded");
@@ -110,28 +114,85 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		return UUID.fromString(matcher.group(2));
 	}
 
-	private void authorizeUserNotificationDestination(StompHeaderAccessor accessor) {
-		UUID userId = userIdFromNotificationDestination(accessor.getDestination());
-		if (userId == null) {
+	private void authorizeUserDestination(StompHeaderAccessor accessor) {
+		String destination = accessor.getDestination();
+		if (!isUserTopicNamespace(destination)) {
 			return;
 		}
-		if (!(accessor.getUser() instanceof WebSocketUserPrincipal principal)) {
-			throw new AccessDeniedException("WebSocket authentication required");
+
+		UUID userId = userIdFromUserDestination(destination);
+		if (userId == null) {
+			throw new AccessDeniedException("Invalid user topic destination");
 		}
+		WebSocketUserPrincipal principal = authenticatedPrincipal(accessor);
 		if (!principal.userId().equals(userId)) {
-			throw new AccessDeniedException("Users can only subscribe to their own notification topic");
+			throw new AccessDeniedException("Users can only access their own user topic");
+		}
+		if (accessor.getCommand() == StompCommand.SEND) {
+			throw new AccessDeniedException("User topics are server-managed and cannot receive client messages");
 		}
 	}
 
-	private UUID userIdFromNotificationDestination(String destination) {
+	private UUID userIdFromUserDestination(String destination) {
 		if (!StringUtils.hasText(destination)) {
 			return null;
 		}
-		Matcher matcher = USER_NOTIFICATION_DESTINATION_PATTERN.matcher(destination);
-		if (!matcher.matches()) {
+		Matcher matcher = USER_DESTINATION_PATTERN.matcher(destination);
+		if (!matcher.matches() || !isSafeUserTopicSuffix(matcher.group(2))) {
 			return null;
 		}
-		return UUID.fromString(matcher.group(1));
+		try {
+			return UUID.fromString(matcher.group(1));
+		} catch (IllegalArgumentException exception) {
+			return null;
+		}
+	}
+
+	private boolean isUserTopicNamespace(String destination) {
+		if (!StringUtils.hasText(destination)) {
+			return false;
+		}
+		String normalizedDestination = destination.toLowerCase(Locale.ROOT);
+		return normalizedDestination.equals(USER_TOPIC_PREFIX)
+				|| normalizedDestination.startsWith(USER_TOPIC_PREFIX + "/")
+				|| normalizedDestination.startsWith(USER_TOPIC_PREFIX + "%");
+	}
+
+	private boolean isSafeUserTopicSuffix(String suffix) {
+		if (suffix == null) {
+			return true;
+		}
+		if (suffix.isEmpty() || suffix.indexOf('%') >= 0 || suffix.indexOf('\\') >= 0) {
+			return false;
+		}
+		return Arrays.stream(suffix.split("/", -1))
+				.noneMatch(segment -> segment.isEmpty() || segment.equals(".") || segment.equals(".."));
+	}
+
+	private void validateSubscriptionDestination(StompHeaderAccessor accessor) {
+		if (accessor.getCommand() != StompCommand.SUBSCRIBE) {
+			return;
+		}
+		String destination = accessor.getDestination();
+		if (isUserTopicNamespace(destination)
+				|| conversationIdFromDestination(destination) != null
+				|| USER_CONVERSATION_EVENTS_DESTINATION.equals(destination)) {
+			return;
+		}
+		if (destination != null && destination.startsWith("/topic/")) {
+			throw new AccessDeniedException("Unsupported WebSocket subscription destination");
+		}
+	}
+
+	private void requireAuthenticatedUser(StompHeaderAccessor accessor) {
+		authenticatedPrincipal(accessor);
+	}
+
+	private WebSocketUserPrincipal authenticatedPrincipal(StompHeaderAccessor accessor) {
+		if (!(accessor.getUser() instanceof WebSocketUserPrincipal principal)) {
+			throw new AccessDeniedException("WebSocket authentication required");
+		}
+		return principal;
 	}
 
 	private String resolveBearerToken(StompHeaderAccessor accessor) {

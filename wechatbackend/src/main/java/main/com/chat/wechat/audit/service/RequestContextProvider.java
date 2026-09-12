@@ -55,12 +55,7 @@ public class RequestContextProvider {
 		if (request == null) {
 			return null;
 		}
-		String forwardedFor = request.getHeader("X-Forwarded-For");
-		if (StringUtils.hasText(forwardedFor)) {
-			return forwardedFor.split(",", 2)[0].trim();
-		}
-		String realIp = request.getHeader("X-Real-IP");
-		return StringUtils.hasText(realIp) ? realIp.trim() : request.getRemoteAddr();
+		return request.getRemoteAddr();
 	}
 
 	private String valueFromRequestOrMdc(HttpServletRequest request, String attributeName, String mdcName) {
