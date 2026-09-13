@@ -9,6 +9,7 @@ import main.com.chat.wechat.conversation.service.ConversationService;
 import main.com.chat.wechat.friendship.service.FriendshipService;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
 import main.com.chat.wechat.message.dto.EditMessageRequest;
+import main.com.chat.wechat.message.dto.MessagePageResponse;
 import main.com.chat.wechat.message.dto.MessageReactionResponse;
 import main.com.chat.wechat.message.dto.MessageResponse;
 import main.com.chat.wechat.message.dto.ReactionRequest;
@@ -16,6 +17,8 @@ import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.model.MessageAttachment;
 import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.message.pagination.MessageCursor;
+import main.com.chat.wechat.message.pagination.MessageCursorCodec;
 import main.com.chat.wechat.notification.event.NotificationEvent;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.dto.RealtimeEvent;
@@ -41,6 +44,7 @@ public class MessageService {
 	private static final Duration EDIT_WINDOW = Duration.ofMinutes(15);
 	private static final Duration RECALL_WINDOW = Duration.ofHours(24);
 	private static final Set<String> CLIENT_MESSAGE_TYPES = Set.of("TEXT", "IMAGE", "FILE", "VOICE");
+	private static final int MAX_MESSAGE_PAGE_SIZE = 100;
 
 	private final ConversationService conversationService;
 	private final ConversationRepository conversationRepository;
@@ -52,6 +56,7 @@ public class MessageService {
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
 	private final NotificationEventPublisher notificationEventPublisher;
+	private final MessageCursorCodec messageCursorCodec;
 
 	public MessageService(
 			ConversationService conversationService,
@@ -63,7 +68,8 @@ public class MessageService {
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
 			RealtimeEventPublisher realtimeEventPublisher,
-			NotificationEventPublisher notificationEventPublisher) {
+			NotificationEventPublisher notificationEventPublisher,
+			MessageCursorCodec messageCursorCodec) {
 		this.conversationService = conversationService;
 		this.conversationRepository = conversationRepository;
 		this.messageRepository = messageRepository;
@@ -74,6 +80,7 @@ public class MessageService {
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
 		this.notificationEventPublisher = notificationEventPublisher;
+		this.messageCursorCodec = messageCursorCodec;
 	}
 
 	@Transactional
@@ -124,18 +131,29 @@ public class MessageService {
 		return response;
 	}
 
-	public List<MessageResponse> list(UUID actorUserId, UUID conversationId, int limit, int offset) {
+	public MessagePageResponse list(UUID actorUserId, UUID conversationId, int limit, String cursor) {
 		conversationService.findAccessibleConversation(actorUserId, conversationId);
-		int safeLimit = Math.min(Math.max(limit, 1), 100);
-		int safeOffset = Math.max(offset, 0);
-		return toResponses(actorUserId, messageRepository.findByConversationId(conversationId, actorUserId, safeLimit, safeOffset));
+		int safeLimit = validateMessagePageSize(limit);
+		MessageCursor decodedCursor = messageCursorCodec.decode(cursor);
+		List<Message> candidates = messageRepository.findByConversationId(
+				conversationId,
+				actorUserId,
+				decodedCursor,
+				safeLimit + 1);
+		return toPage(actorUserId, candidates, safeLimit);
 	}
 
-	public List<MessageResponse> search(UUID actorUserId, UUID conversationId, String query, int limit, int offset) {
+	public MessagePageResponse search(UUID actorUserId, UUID conversationId, String query, int limit, String cursor) {
 		conversationService.findAccessibleConversation(actorUserId, conversationId);
-		int safeLimit = Math.min(Math.max(limit, 1), 100);
-		int safeOffset = Math.max(offset, 0);
-		return toResponses(actorUserId, messageRepository.search(conversationId, actorUserId, query, safeLimit, safeOffset));
+		int safeLimit = validateMessagePageSize(limit);
+		MessageCursor decodedCursor = messageCursorCodec.decode(cursor);
+		List<Message> candidates = messageRepository.search(
+				conversationId,
+				actorUserId,
+				query,
+				decodedCursor,
+				safeLimit + 1);
+		return toPage(actorUserId, candidates, safeLimit);
 	}
 
 	@Transactional
@@ -286,6 +304,23 @@ public class MessageService {
 						reactionsByMessageId.getOrDefault(message.id(), List.of()),
 						attachmentsByMessageId.getOrDefault(message.id(), List.of())))
 				.toList();
+	}
+
+	private MessagePageResponse toPage(UUID actorUserId, List<Message> candidates, int limit) {
+		boolean hasNext = candidates.size() > limit;
+		List<Message> page = hasNext ? candidates.subList(0, limit) : candidates;
+		String nextCursor = hasNext && !page.isEmpty()
+				? messageCursorCodec.encode(new MessageCursor(page.getLast().createdAt(), page.getLast().id()))
+				: null;
+		return new MessagePageResponse(toResponses(actorUserId, page), nextCursor, hasNext, limit);
+	}
+
+	private int validateMessagePageSize(int limit) {
+		if (limit < 1 || limit > MAX_MESSAGE_PAGE_SIZE) {
+			throw new ApiException(HttpStatus.BAD_REQUEST,
+					"Message limit must be between 1 and " + MAX_MESSAGE_PAGE_SIZE);
+		}
+		return limit;
 	}
 
 	private User findActiveUser(UUID userId) {

@@ -1,6 +1,7 @@
 package main.com.chat.wechat.conversation.controller;
 
 import jakarta.validation.Valid;
+import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.security.AuthenticatedUser;
 import main.com.chat.wechat.conversation.dto.AddMembersRequest;
 import main.com.chat.wechat.conversation.dto.ConversationUnreadResponse;
@@ -17,8 +18,10 @@ import main.com.chat.wechat.conversation.service.ConversationReadService;
 import main.com.chat.wechat.conversation.service.ConversationService;
 import main.com.chat.wechat.conversation.service.TypingService;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
+import main.com.chat.wechat.message.dto.MessagePageResponse;
 import main.com.chat.wechat.message.dto.MessageResponse;
 import main.com.chat.wechat.message.service.MessageService;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -213,22 +216,33 @@ public class ConversationController {
 
 	@GetMapping("/{id}/messages")
 	@PreAuthorize("hasAuthority('MESSAGE_READ')")
-	public List<MessageResponse> listMessages(
+	public MessagePageResponse listMessages(
 			@AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable UUID id,
 			@RequestParam(defaultValue = "50") int limit,
-			@RequestParam(defaultValue = "0") int offset) {
-		return messageService.list(user.id(), id, limit, offset);
+			@RequestParam(required = false) String cursor,
+			@RequestParam(required = false) Integer offset) {
+		rejectLegacyOffset(offset);
+		return messageService.list(user.id(), id, limit, cursor);
 	}
 
 	@GetMapping("/{id}/messages/search")
 	@PreAuthorize("hasAuthority('MESSAGE_READ')")
-	public List<MessageResponse> searchMessages(
+	public MessagePageResponse searchMessages(
 			@AuthenticationPrincipal AuthenticatedUser user,
 			@PathVariable UUID id,
 			@RequestParam String q,
 			@RequestParam(defaultValue = "50") int limit,
-			@RequestParam(defaultValue = "0") int offset) {
-		return messageService.search(user.id(), id, q, limit, offset);
+			@RequestParam(required = false) String cursor,
+			@RequestParam(required = false) Integer offset) {
+		rejectLegacyOffset(offset);
+		return messageService.search(user.id(), id, q, limit, cursor);
+	}
+
+	private void rejectLegacyOffset(Integer offset) {
+		if (offset != null) {
+			throw new ApiException(HttpStatus.BAD_REQUEST,
+					"Message history uses cursor pagination; offset is not supported");
+		}
 	}
 }

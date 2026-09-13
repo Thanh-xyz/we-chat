@@ -38,6 +38,14 @@ class ProductionConfigTest {
 		assertThat(defaultConfig.getProperty("app.cors.allowed-headers"))
 				.isEqualTo("${CORS_ALLOWED_HEADERS:Authorization,Content-Type,Accept,Origin,X-Request-ID}");
 		assertThat(defaultConfig.getProperty("app.cors.exposed-headers")).isEqualTo("${CORS_EXPOSED_HEADERS:X-Request-ID}");
+		assertThat(defaultConfig.getProperty("management.endpoints.web.base-path")).isEqualTo("/actuator");
+		assertThat(defaultConfig.getProperty("management.endpoints.web.exposure.include")).isEqualTo("health,prometheus");
+		assertThat(defaultConfig.getProperty("management.endpoints.web.discovery.enabled")).isEqualTo("false");
+		assertThat(defaultConfig.getProperty("management.endpoint.health.probes.enabled")).isEqualTo("true");
+		assertThat(defaultConfig.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
+		assertThat(defaultConfig.getProperty("management.endpoint.health.show-components")).isEqualTo("never");
+		assertThat(defaultConfig.getProperty("management.endpoint.health.group.liveness.include")).isEqualTo("livenessState");
+		assertThat(defaultConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db");
 		assertThat(defaultConfig.getProperty("app.auth.mail.host")).isEqualTo("${MAIL_HOST:}");
 		assertThat(defaultConfig.getProperty("app.auth.mail.port")).isEqualTo("${MAIL_PORT:587}");
 		assertThat(defaultConfig.getProperty("app.auth.mail.username")).isEqualTo("${MAIL_USERNAME:}");
@@ -63,6 +71,8 @@ class ProductionConfigTest {
 				.isEqualTo("${PASSWORD_RESET_URL:http://localhost:5173/reset-password?token=}");
 		assertThat(localConfig.getProperty("app.cors.allowed-origins"))
 				.isEqualTo("http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000");
+		assertThat(localConfig.getProperty("management.endpoints.web.exposure.include")).isEqualTo("health,prometheus");
+		assertThat(localConfig.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
 	}
 
 	@Test
@@ -79,6 +89,15 @@ class ProductionConfigTest {
 		assertThat(prodConfig.getProperty("server.tomcat.remoteip.trusted-proxies")).isEmpty();
 		assertThat(prodConfig.getProperty("app.cors.allowed-origins")).isEqualTo("${CORS_ALLOWED_ORIGINS:}");
 		assertThat(prodConfig.getProperty("app.cors.allowed-origins")).doesNotContain("*");
+		assertThat(prodConfig.getProperty("management.endpoints.web.base-path")).isEqualTo("/actuator");
+		assertThat(prodConfig.getProperty("management.endpoints.web.exposure.include")).isEqualTo("health,prometheus");
+		assertThat(prodConfig.getProperty("management.endpoints.web.exposure.include")).doesNotContain("*");
+		assertThat(prodConfig.getProperty("management.endpoints.web.discovery.enabled")).isEqualTo("false");
+		assertThat(prodConfig.getProperty("management.endpoint.health.probes.enabled")).isEqualTo("true");
+		assertThat(prodConfig.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
+		assertThat(prodConfig.getProperty("management.endpoint.health.show-components")).isEqualTo("never");
+		assertThat(prodConfig.getProperty("management.endpoint.health.group.liveness.include")).isEqualTo("livenessState");
+		assertThat(prodConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.boot")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.web")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.messaging")).isEqualTo("INFO");

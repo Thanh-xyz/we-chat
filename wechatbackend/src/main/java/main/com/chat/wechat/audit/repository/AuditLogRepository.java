@@ -10,6 +10,8 @@ import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -18,6 +20,7 @@ import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
@@ -105,6 +108,30 @@ public class AuditLogRepository {
 				request.limit(),
 				0);
 		return search(searchRequest);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public int deleteBefore(
+			Instant standardCutoff,
+			Instant securityCutoff,
+			Set<String> securityActions,
+			int batchSize) {
+		MapSqlParameterSource parameters = new MapSqlParameterSource()
+				.addValue("standardCutoff", Timestamp.from(standardCutoff))
+				.addValue("securityCutoff", Timestamp.from(securityCutoff))
+				.addValue("securityActions", securityActions)
+				.addValue("batchSize", batchSize);
+		return namedParameterJdbcTemplate.update("""
+				delete from audit_logs
+				where id in (
+				    select id
+				    from audit_logs
+				    where created_at < :securityCutoff
+				       or (created_at < :standardCutoff and action not in (:securityActions))
+				    order by id
+				    limit :batchSize
+				)
+				""", parameters);
 	}
 
 	private Query buildSearchQuery(AuditLogSearchRequest request, boolean paged) {
