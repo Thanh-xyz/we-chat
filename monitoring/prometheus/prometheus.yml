@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Replace localhost:8080 with the reachable backend host:port in each deployment.
+  - job_name: wechat-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - localhost:8080
