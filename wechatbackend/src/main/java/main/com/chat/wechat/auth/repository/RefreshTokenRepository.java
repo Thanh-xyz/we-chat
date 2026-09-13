@@ -5,6 +5,8 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -68,6 +70,21 @@ public class RefreshTokenRepository {
 				set revoked_at = ?
 				where user_id = ? and revoked_at is null
 				""", Timestamp.from(revokedAt), userId);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public int deleteExpiredOrRevokedBefore(Instant expiresCutoff, Instant revokedCutoff, int batchSize) {
+		return jdbcTemplate.update("""
+				delete from refresh_tokens
+				where id in (
+				    select id
+				    from refresh_tokens
+				    where expires_at < ?
+				       or revoked_at < ?
+				    order by id
+				    limit ?
+				)
+				""", Timestamp.from(expiresCutoff), Timestamp.from(revokedCutoff), batchSize);
 	}
 
 	private RowMapper<RefreshToken> rowMapper() {

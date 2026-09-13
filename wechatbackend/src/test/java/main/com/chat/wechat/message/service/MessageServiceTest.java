@@ -10,10 +10,13 @@ import main.com.chat.wechat.friendship.service.FriendshipService;
 import main.com.chat.wechat.message.dto.AttachmentMetadataRequest;
 import main.com.chat.wechat.message.dto.CreateMessageRequest;
 import main.com.chat.wechat.message.dto.EditMessageRequest;
+import main.com.chat.wechat.message.dto.MessagePageResponse;
 import main.com.chat.wechat.message.dto.MessageResponse;
 import main.com.chat.wechat.message.dto.ReactionRequest;
 import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.model.MessageAttachment;
+import main.com.chat.wechat.message.pagination.MessageCursor;
+import main.com.chat.wechat.message.pagination.MessageCursorCodec;
 import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
@@ -29,6 +32,7 @@ import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -92,8 +96,83 @@ class MessageServiceTest {
 				auditLogService,
 				auditJsonWriter,
 				realtimeEventPublisher,
-				notificationEventPublisher);
+				notificationEventPublisher,
+				new MessageCursorCodec());
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
+		lenient().when(messageRepository.findReactionSummariesByMessageIds(any(), eq(ACTOR_ID))).thenReturn(Map.of());
+		lenient().when(messageAttachmentRepository.findByMessageIds(any())).thenReturn(Map.of());
+	}
+
+	@Test
+	void listUsesDeterministicKeysetCursorFromLastReturnedMessage() {
+		Instant base = Instant.parse("2026-01-01T00:00:00Z");
+		Message newest = messageWithId(
+				UUID.fromString("00000000-0000-0000-0000-000000000023"), ACTOR_ID, base.plusSeconds(3));
+		Message middle = messageWithId(
+				UUID.fromString("00000000-0000-0000-0000-000000000022"), ACTOR_ID, base.plusSeconds(2));
+		Message oldest = messageWithId(
+				UUID.fromString("00000000-0000-0000-0000-000000000021"), ACTOR_ID, base.plusSeconds(1));
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+		when(messageRepository.findByConversationId(
+				CONVERSATION_ID, ACTOR_ID, null, 3)).thenReturn(List.of(newest, middle, oldest));
+
+		MessagePageResponse response = messageService.list(ACTOR_ID, CONVERSATION_ID, 2, null);
+
+		assertThat(response.items()).extracting(MessageResponse::id)
+				.containsExactly(newest.id(), middle.id());
+		assertThat(response.hasNext()).isTrue();
+		assertThat(response.limit()).isEqualTo(2);
+		assertThat(new MessageCursorCodec().decode(response.nextCursor()))
+				.isEqualTo(new MessageCursor(middle.createdAt(), middle.id()));
+		verify(messageRepository).findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 3);
+	}
+
+	@Test
+	void listRejectsInvalidLimitAndCursorWithoutClampingOrFallback() {
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+
+		assertThatThrownBy(() -> messageService.list(ACTOR_ID, CONVERSATION_ID, 0, null))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
+		assertThatThrownBy(() -> messageService.list(ACTOR_ID, CONVERSATION_ID, 101, null))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
+		assertThatThrownBy(() -> messageService.list(ACTOR_ID, CONVERSATION_ID, 50, "not-a-cursor"))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
+
+		verify(messageRepository, never()).findByConversationId(any(), any(), any(), any(Integer.class));
+	}
+
+	@Test
+	void listChecksMembershipBeforeReadingWithCursor() {
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID))
+				.thenThrow(new ApiException(HttpStatus.FORBIDDEN, "Conversation access denied"));
+		String cursor = new MessageCursorCodec().encode(new MessageCursor(
+				Instant.parse("2026-01-01T00:00:00Z"), MESSAGE_ID));
+
+		assertThatThrownBy(() -> messageService.list(ACTOR_ID, CONVERSATION_ID, 50, cursor))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.FORBIDDEN));
+		verify(messageRepository, never()).findByConversationId(any(), any(), any(), any(Integer.class));
+	}
+
+	@Test
+	void searchUsesTheSameCursorContract() {
+		Message result = messageWithId(MESSAGE_ID, ACTOR_ID, Instant.parse("2026-01-01T00:00:00Z"));
+		MessageCursor cursor = new MessageCursor(
+				Instant.parse("2026-01-02T00:00:00Z"),
+				UUID.fromString("00000000-0000-0000-0000-000000000021"));
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+		when(messageRepository.search(CONVERSATION_ID, ACTOR_ID, "hello", cursor, 3)).thenReturn(List.of(result));
+
+		MessagePageResponse response = messageService.search(
+				ACTOR_ID, CONVERSATION_ID, "hello", 2, new MessageCursorCodec().encode(cursor));
+
+		assertThat(response.items()).extracting(MessageResponse::id).containsExactly(MESSAGE_ID);
+		assertThat(response.hasNext()).isFalse();
+		assertThat(response.nextCursor()).isNull();
+		verify(messageRepository).search(CONVERSATION_ID, ACTOR_ID, "hello", cursor, 3);
 	}
 
 	@Test
@@ -373,8 +452,22 @@ class MessageServiceTest {
 	}
 
 	private Message message(UUID senderId, String messageType, Instant createdAt, boolean edited, boolean recalled) {
+		return messageWithId(MESSAGE_ID, senderId, createdAt, messageType, edited, recalled);
+	}
+
+	private Message messageWithId(UUID id, UUID senderId, Instant createdAt) {
+		return messageWithId(id, senderId, createdAt, "TEXT", false, false);
+	}
+
+	private Message messageWithId(
+			UUID id,
+			UUID senderId,
+			Instant createdAt,
+			String messageType,
+			boolean edited,
+			boolean recalled) {
 		return new Message(
-				MESSAGE_ID,
+				id,
 				CONVERSATION_ID,
 				senderId,
 				"content",

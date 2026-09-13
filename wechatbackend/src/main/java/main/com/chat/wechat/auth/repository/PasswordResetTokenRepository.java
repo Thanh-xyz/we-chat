@@ -5,6 +5,8 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -62,6 +64,21 @@ public class PasswordResetTokenRepository {
 				set used_at = ?
 				where user_id = ? and used_at is null
 				""", Timestamp.from(usedAt), userId);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public int deleteExpiredOrUsedBefore(Instant expiresCutoff, Instant usedCutoff, int batchSize) {
+		return jdbcTemplate.update("""
+				delete from password_reset_tokens
+				where id in (
+				    select id
+				    from password_reset_tokens
+				    where expires_at < ?
+				       or used_at < ?
+				    order by id
+				    limit ?
+				)
+				""", Timestamp.from(expiresCutoff), Timestamp.from(usedCutoff), batchSize);
 	}
 
 	private RowMapper<PasswordResetToken> rowMapper() {

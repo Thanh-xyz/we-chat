@@ -60,6 +60,11 @@ public class SecurityConfig {
 				.authorizeHttpRequests(auth -> auth
 						.requestMatchers(HttpMethod.OPTIONS, "/api/**").permitAll()
 						.requestMatchers(
+								"/actuator/health",
+								"/actuator/health/liveness",
+								"/actuator/health/readiness",
+								"/actuator/prometheus").permitAll()
+						.requestMatchers(
 								"/api/auth/register",
 								"/api/auth/login",
 								"/api/auth/refresh",

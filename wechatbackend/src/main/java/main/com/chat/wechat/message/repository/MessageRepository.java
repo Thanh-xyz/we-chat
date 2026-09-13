@@ -2,10 +2,13 @@ package main.com.chat.wechat.message.repository;
 
 import main.com.chat.wechat.message.dto.MessageReactionResponse;
 import main.com.chat.wechat.message.model.Message;
+import main.com.chat.wechat.message.pagination.MessageCursor;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.RowCallbackHandler;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
@@ -23,9 +26,11 @@ import java.util.UUID;
 @Repository
 public class MessageRepository {
 	private final JdbcTemplate jdbcTemplate;
+	private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
 	public MessageRepository(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.namedParameterJdbcTemplate = new NamedParameterJdbcTemplate(jdbcTemplate);
 	}
 
 	public Message save(Message message) {
@@ -141,49 +146,80 @@ public class MessageRepository {
 		}
 	}
 
-	public List<Message> findByConversationId(UUID conversationId, UUID actorUserId, int limit, int offset) {
-		return jdbcTemplate.query("""
+	public List<Message> findByConversationId(
+			UUID conversationId,
+			UUID actorUserId,
+			MessageCursor cursor,
+			int limit) {
+		MapSqlParameterSource parameters = new MapSqlParameterSource()
+				.addValue("conversationId", conversationId)
+				.addValue("actorUserId", actorUserId)
+				.addValue("limit", limit);
+		String cursorPredicate = cursorPredicate(cursor, parameters);
+		return namedParameterJdbcTemplate.query("""
 				select *
 				from messages m
-				where m.conversation_id = ?
+				where m.conversation_id = :conversationId
 				  and m.deleted_at is null
 				  and not exists (
 				      select 1
 				      from message_user_deletions mud
-				      where mud.message_id = m.id and mud.user_id = ?
+				      where mud.message_id = m.id and mud.user_id = :actorUserId
 				  )
-				order by m.created_at desc
-				limit ? offset ?
-				""", rowMapper(), conversationId, actorUserId, limit, offset);
+				""" + cursorPredicate + """
+				order by m.created_at desc, m.id desc
+				limit :limit
+				""", parameters, rowMapper());
 	}
 
-	public List<Message> search(UUID conversationId, UUID actorUserId, String query, int limit, int offset) {
+	public List<Message> search(UUID conversationId, UUID actorUserId, String query, MessageCursor cursor, int limit) {
 		if (query == null || query.isBlank()) {
 			return Collections.emptyList();
 		}
 		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
-		return jdbcTemplate.query("""
+		MapSqlParameterSource parameters = new MapSqlParameterSource()
+				.addValue("conversationId", conversationId)
+				.addValue("actorUserId", actorUserId)
+				.addValue("query", normalizedQuery)
+				.addValue("limit", limit);
+		String cursorPredicate = cursorPredicate(cursor, parameters);
+		return namedParameterJdbcTemplate.query("""
 				select distinct m.*
 				from messages m
 				join users sender on sender.id = m.sender_id
-				where m.conversation_id = ?
+				where m.conversation_id = :conversationId
 				  and m.deleted_at is null
 				  and m.is_recalled = false
 				  and m.recalled_at is null
 				  and not exists (
 				      select 1
 				      from message_user_deletions mud
-				      where mud.message_id = m.id and mud.user_id = ?
+				      where mud.message_id = m.id and mud.user_id = :actorUserId
 				  )
 				  and (
-				      lower(coalesce(m.content, '')) like ?
-				      or lower(coalesce(sender.username, '')) like ?
-				      or lower(coalesce(sender.email, '')) like ?
-				      or lower(coalesce(sender.display_name, '')) like ?
+				      lower(coalesce(m.content, '')) like :query
+				      or lower(coalesce(sender.username, '')) like :query
+				      or lower(coalesce(sender.email, '')) like :query
+				      or lower(coalesce(sender.display_name, '')) like :query
 				  )
-				order by m.created_at desc
-				limit ? offset ?
-				""", rowMapper(), conversationId, actorUserId, normalizedQuery, normalizedQuery, normalizedQuery, normalizedQuery, limit, offset);
+				""" + cursorPredicate + """
+				order by m.created_at desc, m.id desc
+				limit :limit
+				""", parameters, rowMapper());
+	}
+
+	private String cursorPredicate(MessageCursor cursor, MapSqlParameterSource parameters) {
+		if (cursor == null) {
+			return "";
+		}
+		parameters.addValue("cursorCreatedAt", Timestamp.from(cursor.createdAt()));
+		parameters.addValue("cursorId", cursor.id());
+		return """
+				and (
+				    m.created_at < :cursorCreatedAt
+				    or (m.created_at = :cursorCreatedAt and m.id < :cursorId)
+				)
+				""";
 	}
 
 	public Message updateContent(UUID messageId, String content, Instant editedAt) {

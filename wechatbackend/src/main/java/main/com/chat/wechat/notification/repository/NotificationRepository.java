@@ -8,6 +8,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -174,6 +176,21 @@ public class NotificationRepository {
 				  and deleted_at is null
 				""", Timestamp.from(deletedAt), notificationId, userId);
 		return existing;
+	}
+
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public int deleteReadOrSoftDeletedBefore(Instant readCutoff, Instant deletedCutoff, int batchSize) {
+		return jdbcTemplate.update("""
+				delete from notifications
+				where id in (
+				    select id
+				    from notifications
+				    where deleted_at < ?
+				       or (deleted_at is null and is_read = true and read_at < ?)
+				    order by id
+				    limit ?
+				)
+				""", Timestamp.from(deletedCutoff), Timestamp.from(readCutoff), batchSize);
 	}
 
 	public Optional<NotificationPreference> findPreferenceByUserId(UUID userId) {
