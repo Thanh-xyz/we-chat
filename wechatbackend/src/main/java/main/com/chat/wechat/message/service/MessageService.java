@@ -3,6 +3,7 @@ package main.com.chat.wechat.message.service;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
+import main.com.chat.wechat.common.search.SearchQueryPolicy;
 import main.com.chat.wechat.conversation.model.Conversation;
 import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.conversation.service.ConversationService;
@@ -145,6 +146,7 @@ public class MessageService {
 
 	public MessagePageResponse search(UUID actorUserId, UUID conversationId, String query, int limit, String cursor) {
 		conversationService.findAccessibleConversation(actorUserId, conversationId);
+		SearchQueryPolicy.validate(query);
 		int safeLimit = validateMessagePageSize(limit);
 		MessageCursor decodedCursor = messageCursorCodec.decode(cursor);
 		List<Message> candidates = messageRepository.search(

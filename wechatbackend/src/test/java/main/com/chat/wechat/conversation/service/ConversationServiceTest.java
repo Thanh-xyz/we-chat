@@ -262,15 +262,37 @@ class ConversationServiceTest {
 	@Test
 	void listConversationsDoesNotIncludeArchivedByDefault() {
 		when(conversationRepository.findByMember(USER_LOW, false, 50, 0)).thenReturn(List.of());
-		when(conversationMemberRepository.findMemberIdsByConversationIds(List.of())).thenReturn(Map.of());
-		when(messageRepository.countUnreadByConversationIds(USER_LOW, List.of())).thenReturn(Map.of());
-		when(conversationMemberRepository.findActiveMembersByConversationIds(USER_LOW, List.of())).thenReturn(Map.of());
 
 		List<ConversationResponse> responses = conversationService.list(USER_LOW, false, 50, 0);
 
 		assertThat(responses).isEmpty();
 		verify(conversationRepository).findByMember(USER_LOW, false, 50, 0);
+		verify(messageRepository, never()).countUnreadByConversationIds(any(UUID.class), any());
 		verifyNoInteractions(realtimeEventPublisher);
+	}
+
+	@Test
+	void listConversationsUsesOneUnreadBatchAndDefaultsMissingCountsToZero() {
+		Conversation first = conversation(USER_LOW);
+		Conversation second = conversation(USER_LOW);
+		Conversation third = conversation(USER_LOW);
+		List<Conversation> conversations = List.of(first, second, third);
+		List<UUID> conversationIds = conversations.stream().map(Conversation::id).toList();
+		when(conversationRepository.findByMember(USER_LOW, false, 50, 0)).thenReturn(conversations);
+		when(conversationMemberRepository.findMemberIdsByConversationIds(conversationIds))
+				.thenReturn(Map.of(
+						first.id(), List.of(USER_LOW),
+						second.id(), List.of(USER_LOW),
+						third.id(), List.of(USER_LOW)));
+		when(messageRepository.countUnreadByConversationIds(USER_LOW, conversationIds))
+				.thenReturn(Map.of(first.id(), 3, third.id(), 2));
+		when(conversationMemberRepository.findActiveMembersByConversationIds(USER_LOW, conversationIds))
+				.thenReturn(Map.of());
+
+		List<ConversationResponse> responses = conversationService.list(USER_LOW, false, 50, 0);
+
+		assertThat(responses).extracting(ConversationResponse::unreadCount).containsExactly(3, 0, 2);
+		verify(messageRepository).countUnreadByConversationIds(USER_LOW, conversationIds);
 	}
 
 	@Test

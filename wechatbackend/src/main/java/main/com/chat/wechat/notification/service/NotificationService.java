@@ -6,6 +6,7 @@ import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.config.NotificationExecutorProperties;
 import main.com.chat.wechat.notification.dto.NotificationCountResponse;
 import main.com.chat.wechat.notification.dto.NotificationPreferenceResponse;
 import main.com.chat.wechat.notification.dto.NotificationRealtimeEvent;
@@ -24,8 +25,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.event.TransactionPhase;
-import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
@@ -53,6 +52,7 @@ public class NotificationService {
 	private final RealtimeEventPublisher realtimeEventPublisher;
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
+	private final NotificationExecutorProperties executorProperties;
 
 	public NotificationService(
 			NotificationRepository notificationRepository,
@@ -61,7 +61,8 @@ public class NotificationService {
 			UserRepository userRepository,
 			RealtimeEventPublisher realtimeEventPublisher,
 			AuditLogService auditLogService,
-			AuditJsonWriter auditJsonWriter) {
+			AuditJsonWriter auditJsonWriter,
+			NotificationExecutorProperties executorProperties) {
 		this.notificationRepository = notificationRepository;
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.messageRepository = messageRepository;
@@ -69,9 +70,9 @@ public class NotificationService {
 		this.realtimeEventPublisher = realtimeEventPublisher;
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
+		this.executorProperties = executorProperties;
 	}
 
-	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void handleNotificationEvent(NotificationEvent event) {
 		switch (event.eventType()) {
@@ -205,6 +206,7 @@ public class NotificationService {
 	private void handleMessageCreated(NotificationEvent event) {
 		List<UUID> recipients = conversationMemberRepository.findMemberIds(event.conversationId()).stream()
 				.filter(userId -> !userId.equals(event.actorUserId()))
+				.distinct()
 				.toList();
 		if (recipients.isEmpty()) {
 			return;
@@ -291,7 +293,7 @@ public class NotificationService {
 			return;
 		}
 		Instant now = Instant.now();
-		List<UUID> recipients = event.recipientUserIds().stream().toList();
+		List<UUID> recipients = event.recipientUserIds().stream().distinct().toList();
 		Map<UUID, NotificationPreference> preferences = preferencesFor(recipients, now);
 		List<Notification> notifications = new ArrayList<>();
 		for (UUID recipientId : recipients) {
@@ -345,6 +347,16 @@ public class NotificationService {
 
 	private void saveAndPublish(List<Notification> notifications, Instant now) {
 		if (notifications == null || notifications.isEmpty()) {
+			return;
+		}
+		for (int start = 0; start < notifications.size(); start += executorProperties.batchSize()) {
+			int end = Math.min(start + executorProperties.batchSize(), notifications.size());
+			saveAndPublishBatch(notifications.subList(start, end), now);
+		}
+	}
+
+	private void saveAndPublishBatch(List<Notification> notifications, Instant now) {
+		if (notifications.isEmpty()) {
 			return;
 		}
 		notificationRepository.saveAll(notifications);
@@ -402,6 +414,7 @@ public class NotificationService {
 		if (event.recipientUserIds() != null && !event.recipientUserIds().isEmpty()) {
 			return event.recipientUserIds().stream()
 					.filter(userId -> !userId.equals(event.actorUserId()))
+					.distinct()
 					.toList();
 		}
 		if (event.conversationId() == null) {
@@ -409,6 +422,7 @@ public class NotificationService {
 		}
 		return conversationMemberRepository.findMemberIds(event.conversationId()).stream()
 				.filter(userId -> !userId.equals(event.actorUserId()))
+				.distinct()
 				.toList();
 	}
 

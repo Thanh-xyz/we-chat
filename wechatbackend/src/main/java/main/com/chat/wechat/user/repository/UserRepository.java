@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -143,7 +144,7 @@ public class UserRepository {
 		if (query == null || query.isBlank()) {
 			return Collections.emptyList();
 		}
-		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
+		String normalizedQuery = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
 		return jdbcTemplate.query("""
 				select *
 				from users

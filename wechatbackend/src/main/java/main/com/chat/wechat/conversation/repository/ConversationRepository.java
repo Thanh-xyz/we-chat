@@ -13,6 +13,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -76,7 +77,7 @@ public class ConversationRepository {
 		if (query == null || query.isBlank()) {
 			return Collections.emptyList();
 		}
-		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
+		String normalizedQuery = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
 		return jdbcTemplate.query("""
 				select id, type, name, avatar_url, created_by, last_message_id,
 				       last_message_at, deleted_at, created_at, updated_at
@@ -92,14 +93,14 @@ public class ConversationRepository {
 				    left join conversation_members cm
 				        on cm.conversation_id = c.id
 				       and cm.left_at is null
-				    left join users u on u.id = cm.user_id
+				    left join users u on u.id = cm.user_id and u.deleted_at is null
 				    where c.deleted_at is null
 				      and (? = true or actor_member.archived_at is null)
 				      and (
-				          (c.type = 'GROUP' and lower(coalesce(c.name, '')) like ?)
-				          or lower(coalesce(u.username, '')) like ?
-				          or lower(coalesce(u.email, '')) like ?
-				          or lower(coalesce(u.display_name, '')) like ?
+				          (c.type = 'GROUP' and lower(c.name) like ?)
+				          or lower(u.username) like ?
+				          or lower(u.email) like ?
+				          or lower(u.display_name) like ?
 				      )
 				    order by c.id, actor_member.pinned_at desc nulls last,
 				             c.last_message_at desc nulls last, c.updated_at desc
