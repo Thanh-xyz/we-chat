@@ -176,6 +176,30 @@ class MessageServiceTest {
 	}
 
 	@Test
+	void searchRejectsOversizedQueryAfterMembershipCheck() {
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+
+		assertThatThrownBy(() -> messageService.search(
+				ACTOR_ID, CONVERSATION_ID, "x".repeat(101), 50, null))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.BAD_REQUEST));
+
+		verify(messageRepository, never()).search(any(), any(), any(), any(), any(Integer.class));
+	}
+
+	@Test
+	void searchChecksMembershipBeforeReadingResults() {
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID))
+				.thenThrow(new ApiException(HttpStatus.FORBIDDEN, "Conversation access denied"));
+
+		assertThatThrownBy(() -> messageService.search(ACTOR_ID, CONVERSATION_ID, "hello", 50, null))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.FORBIDDEN));
+
+		verify(messageRepository, never()).search(any(), any(), any(), any(), any(Integer.class));
+	}
+
+	@Test
 	void editMessageRejectsNonSender() {
 		Message message = message(OTHER_USER_ID, "TEXT", Instant.now(), false, false);
 		when(userRepository.findById(ACTOR_ID)).thenReturn(Optional.of(activeUser(ACTOR_ID)));

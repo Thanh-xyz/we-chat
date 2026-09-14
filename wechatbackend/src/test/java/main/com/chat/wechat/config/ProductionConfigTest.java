@@ -51,6 +51,16 @@ class ProductionConfigTest {
 		assertThat(defaultConfig.getProperty("app.auth.mail.username")).isEqualTo("${MAIL_USERNAME:}");
 		assertThat(defaultConfig.getProperty("app.auth.mail.password")).isEqualTo("${MAIL_PASSWORD:}");
 		assertThat(defaultConfig.getProperty("app.auth.mail.from")).isEqualTo("${MAIL_FROM:}");
+		assertThat(defaultConfig.getProperty("app.notification.executor.core-size"))
+				.isEqualTo("${NOTIFICATION_EXECUTOR_CORE_SIZE:2}");
+		assertThat(defaultConfig.getProperty("app.notification.executor.max-size"))
+				.isEqualTo("${NOTIFICATION_EXECUTOR_MAX_SIZE:8}");
+		assertThat(defaultConfig.getProperty("app.notification.executor.queue-capacity"))
+				.isEqualTo("${NOTIFICATION_EXECUTOR_QUEUE_CAPACITY:1000}");
+		assertThat(defaultConfig.getProperty("app.notification.executor.batch-size"))
+				.isEqualTo("${NOTIFICATION_EXECUTOR_BATCH_SIZE:100}");
+		assertThat(defaultConfig.getProperty("app.notification.executor.shutdown-timeout"))
+				.isEqualTo("${NOTIFICATION_EXECUTOR_SHUTDOWN_TIMEOUT:PT10S}");
 	}
 
 	@Test
