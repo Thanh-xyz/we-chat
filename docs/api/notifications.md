@@ -127,7 +127,11 @@ notification.count_updated
 
 ## Event-Driven Flow
 
-The message and conversation modules only publish `NotificationEvent`. `NotificationService` listens after commit, checks preferences, creates in-app notification rows, writes `notification_delivery` rows for the `IN_APP` channel, updates unread count, and pushes realtime events.
+The message and conversation modules only publish `NotificationEvent`. The publisher defers the application event until the surrounding transaction commits; a rollback therefore produces no notification task. After commit, the process-local dispatcher submits the event to a bounded notification executor. `NotificationService` then checks preferences, creates in-app notification rows, writes `notification_delivery` rows for the `IN_APP` channel, updates unread count, and pushes realtime events.
+
+The executor is configured with `app.notification.executor.core-size`, `max-size`, `queue-capacity`, `batch-size`, and `shutdown-timeout` (environment variables `NOTIFICATION_EXECUTOR_*`). Queue rejection and task failures are logged with event type only and counted in metrics; they do not fail the already-committed message. Fanout writes are batched, and recipient discovery/preferences are performed in bounded database operations rather than one query per recipient.
+
+This dispatcher is process-local and has no durable queue or outbox. A process crash after message commit and before notification processing can lose the notification/realtime dispatch. Durable delivery requires a future outbox or queue-worker design.
 
 ## Postman Test Flow
 
