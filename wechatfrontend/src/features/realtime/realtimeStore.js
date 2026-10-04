@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useChatStore } from '../conversations/chatStore.js'
+import { useNotificationStore } from '../notifications/notificationStore.js'
 import { getAccessToken } from '../../services/auth/tokenStorage.js'
 import { webSocketManager } from '../../services/websocket/WebSocketManager.js'
 
@@ -16,7 +17,10 @@ export const useRealtimeStore = create((set, get) => ({
       getAccessToken,
       onState: (status) => set({ status }),
       onConversationEvent: (event) => useChatStore.getState().handleRealtimeEvent(event),
-      onNotificationEvent: (event) => useChatStore.getState().handleNotificationEvent(event),
+      onNotificationEvent: (event) => {
+        useChatStore.getState().handleNotificationEvent(event)
+        useNotificationStore.getState().handleRealtimeEvent(event)
+      },
     })
   },
 

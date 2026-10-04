@@ -1,8 +1,10 @@
-import { Bell, LogOut, MessageCircleMore, Search } from 'lucide-react'
+import { Bell, LogOut, MessageCircleMore, Search, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../common/Avatar.jsx'
 import { ConnectionBadge } from '../common/ConnectionBadge.jsx'
 import { ConversationList } from './ConversationList.jsx'
+import { NotificationPanel } from '../notifications/NotificationPanel.jsx'
 
 export function ChatSidebar({
   user,
@@ -13,12 +15,20 @@ export function ChatSidebar({
   error,
   connectionStatus,
   notificationUnread,
+  notificationPanel,
+  notificationData,
   onSearch,
   onSelect,
   onLogout,
   onRetryConnection,
+  onToggleNotifications,
+  onLoadNotifications,
+  onReadNotification,
+  onReadAllNotifications,
+  onRemoveNotification,
 }) {
   const [query, setQuery] = useState('')
+  const navigate = useNavigate()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -37,15 +47,19 @@ export function ChatSidebar({
           <strong>ChatSpace</strong>
         </div>
         <div className="sidebar-actions">
-          <span className="notification-indicator" title={`${notificationUnread} thông báo chưa đọc`}>
+          <button type="button" className="notification-indicator" title={`${notificationUnread} thông báo chưa đọc`} onClick={onToggleNotifications} aria-label="Mở thông báo">
             <Bell size={19} />
             {notificationUnread > 0 && <span>{notificationUnread > 9 ? '9+' : notificationUnread}</span>}
-          </span>
+          </button>
+          <button className="icon-button" type="button" onClick={() => navigate('/app/contacts')} aria-label="Mở danh bạ" title="Danh bạ">
+            <Users size={19} />
+          </button>
           <button className="icon-button" type="button" onClick={onLogout} aria-label="Đăng xuất" title="Đăng xuất">
             <LogOut size={19} />
           </button>
         </div>
       </header>
+      {notificationPanel && <NotificationPanel {...notificationData} onClose={onToggleNotifications} onLoad={onLoadNotifications} onRead={onReadNotification} onReadAll={onReadAllNotifications} onRemove={onRemoveNotification} />}
 
       <div className="profile-strip">
         <Avatar name={user.displayName || user.username} src={user.avatarUrl} />

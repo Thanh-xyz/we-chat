@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute, PublicOnlyRoute } from './app/RouteGuards.jsx'
 import { useAuthStore } from './features/auth/authStore.js'
 import { ChatPage } from './pages/ChatPage.jsx'
+import { ContactsPage } from './pages/ContactsPage.jsx'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
 import { RegisterPage } from './pages/RegisterPage.jsx'
@@ -32,6 +33,7 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<ChatPage />} />
         <Route path="/app/chat/:conversationId" element={<ChatPage />} />
+        <Route path="/app/contacts" element={<ContactsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/app" replace />} />
       <Route path="*" element={<Navigate to="/app" replace />} />

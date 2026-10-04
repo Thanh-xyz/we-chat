@@ -9,7 +9,7 @@ describe('MessageComposer', () => {
     const field = screen.getByLabelText('Nội dung tin nhắn')
     fireEvent.change(field, { target: { value: '  hello  ' } })
     fireEvent.keyDown(field, { key: 'Enter' })
-    await waitFor(() => expect(onSend).toHaveBeenCalledWith('hello'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith({ content: 'hello', messageType: 'TEXT', attachmentIds: [] }))
     expect(field).toHaveValue('')
   })
 

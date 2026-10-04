@@ -4,7 +4,7 @@ import { conversationName } from '../../utils/chat.js'
 import { MessageComposer } from './MessageComposer.jsx'
 import { MessageList } from './MessageList.jsx'
 
-export function ConversationPanel({ conversation, messages, page, userId, typingUsers, onBack, onLoadOlder, onRetry, onSend, onTyping }) {
+export function ConversationPanel({ conversation, messages, page, userId, typingUsers, draft, onDraftChange, onBack, onLoadOlder, onRetry, onSend, onTyping }) {
   if (!conversation) {
     return (
       <section className="chat-empty-panel">
@@ -28,7 +28,7 @@ export function ConversationPanel({ conversation, messages, page, userId, typing
         </div>
       </header>
       <MessageList conversationId={conversation.id} messages={messages} page={page} currentUserId={userId} typingUsers={typingUsers} onLoadOlder={onLoadOlder} onRetry={onRetry} />
-      <MessageComposer conversationId={conversation.id} onSend={onSend} onTyping={onTyping} />
+      <MessageComposer key={conversation.id} conversationId={conversation.id} draft={draft} onDraftChange={onDraftChange} onSend={onSend} onTyping={onTyping} />
     </section>
   )
 }

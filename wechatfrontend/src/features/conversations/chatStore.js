@@ -21,6 +21,7 @@ export const useChatStore = create((set, get) => ({
   messagesByConversation: {},
   pagesByConversation: {},
   typingByConversation: {},
+  drafts: {},
   notificationUnread: 0,
 
   loadConversations: async ({ signal, query = '' } = {}) => {
@@ -118,8 +119,8 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId, content) => {
-    const message = await messageApi.send(conversationId, content)
+  sendMessage: async (conversationId, { content = null, messageType = 'TEXT', attachmentIds = [] } = {}) => {
+    const message = await messageApi.send(conversationId, { content, messageType, attachmentIds })
     set((state) => ({
       messagesByConversation: {
         ...state.messagesByConversation,
@@ -129,6 +130,8 @@ export const useChatStore = create((set, get) => ({
     }))
     return message
   },
+
+  setDraft: (conversationId, content) => set((state) => ({ drafts: { ...state.drafts, [conversationId]: content } })),
 
   markRead: async (conversationId, lastReadMessageId = null) => {
     const result = await conversationApi.markRead(conversationId, lastReadMessageId)
@@ -203,6 +206,7 @@ export const useChatStore = create((set, get) => ({
       messagesByConversation: {},
       pagesByConversation: {},
       typingByConversation: {},
+      drafts: {},
       notificationUnread: 0,
     })
   },
