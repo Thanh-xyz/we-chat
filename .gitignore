@@ -55,6 +55,8 @@ logs/
 coverage/
 .nyc_output/
 surefire-reports/
+test-results/
+playwright-report/
 
 # IDE and OS files
 .idea/

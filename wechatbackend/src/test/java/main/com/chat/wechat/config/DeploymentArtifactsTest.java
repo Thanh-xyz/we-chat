@@ -31,7 +31,7 @@ class DeploymentArtifactsTest {
 
 	@Test
 	void composeKeepsDatabasePrivateAndValidatesRequiredRuntimeConfiguration() throws IOException {
-		String compose = read("docker-compose.yml");
+		String compose = read("docker/docker-compose.yml");
 		String postgresService = compose.substring(
 				compose.indexOf("  postgres:"),
 				compose.indexOf("  backend:"));
@@ -58,7 +58,7 @@ class DeploymentArtifactsTest {
 
 	@Test
 	void nginxSupportsRestWebSocketAndSanitizesForwardedAddresses() throws IOException {
-		String nginx = read("nginx/nginx.conf");
+		String nginx = read("docker/gateway/nginx.conf");
 
 		assertThat(nginx).contains(
 				"location /api/",
@@ -97,10 +97,10 @@ class DeploymentArtifactsTest {
 		String documentation = read("docs/deployment.md");
 
 		assertThat(documentation).contains(
-				"docker compose config",
-				"docker compose up -d",
+				"docker compose --env-file .env -f docker/docker-compose.yml config",
+				"docker compose --env-file .env -f docker/docker-compose.yml up -d",
 				"/actuator/health/readiness",
-				"docker compose down",
+				"docker compose --env-file .env -f docker/docker-compose.yml down",
 				"The Spring simple WebSocket broker is single-instance",
 				"Local upload storage is single-instance",
 				"The in-memory rate limiter is node-local",

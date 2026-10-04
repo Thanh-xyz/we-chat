@@ -6,8 +6,8 @@ This stack provides a reproducible single-instance deployment foundation:
 Browser / operator
         |
         v
-Nginx :${HTTP_PORT:-8080}
-   |-- Vite static scaffold
+Gateway Nginx :${HTTP_PORT:-8080}
+   |-- / ------------------------> Frontend Nginx :8080
    |-- /api/* -------------------+
    |-- /ws ----------------------+--> Spring Boot :8080
    |-- approved /actuator paths -+          |
@@ -15,7 +15,7 @@ Nginx :${HTTP_PORT:-8080}
                                       PostgreSQL :5432
 ```
 
-Only Nginx publishes a host port. PostgreSQL is attached only to an internal Docker network, and the backend port is available only to other Compose services.
+The Compose services are `gateway`, `frontend`, `backend`, and `postgres`. Only Gateway publishes a host port. Frontend and Backend are reachable only on the private app network; PostgreSQL is reachable only on the private database network.
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ Edit `.env` and set every blank required value. Compose rejects missing or empty
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `HTTP_PORT` | No | Host port published by Nginx; defaults to `8080`. |
+| `HTTP_PORT` | No | Host port published by Gateway; defaults to `8080`. |
 | `DB_NAME` | Yes | PostgreSQL database and JDBC database name. |
 | `DB_USERNAME` | Yes | PostgreSQL and JDBC username. |
 | `DB_PASSWORD` | Yes | PostgreSQL and JDBC password. |
@@ -68,11 +68,13 @@ The checked-in localhost origins and callback URLs are only runnable defaults fo
 
 After filling `.env`:
 
+Because the Compose file lives under `docker/`, pass the root environment file explicitly when invoking Compose from the repository root:
+
 ```bash
-docker compose config
-docker compose build
-docker compose up -d
-docker compose ps
+docker compose --env-file .env -f docker/docker-compose.yml config
+docker compose --env-file .env -f docker/docker-compose.yml build
+docker compose --env-file .env -f docker/docker-compose.yml up -d
+docker compose --env-file .env -f docker/docker-compose.yml ps
 ```
 
 Startup ordering is:
@@ -82,7 +84,7 @@ PostgreSQL pg_isready
         v
 Spring Boot starts, runs Flyway, then readiness reports UP
         v
-Nginx starts and routes traffic
+Frontend serves static files and Gateway starts routing traffic
 ```
 
 `depends_on` only controls startup ordering. Runtime readiness remains the Actuator endpoint; Compose does not provide continuous traffic draining if a previously healthy backend later becomes unready.
@@ -93,6 +95,7 @@ With the default host port:
 
 ```bash
 curl -fsS http://localhost:8080/actuator/health
+curl -fsS http://localhost:8080/health
 curl -fsS http://localhost:8080/actuator/health/liveness
 curl -fsS http://localhost:8080/actuator/health/readiness
 curl -fsS http://localhost:8080/actuator/prometheus
@@ -100,7 +103,7 @@ curl -fsS http://localhost:8080/actuator/prometheus
 
 Liveness checks only application process state. Readiness also checks the datasource, so PostgreSQL failure removes the backend from the healthy startup chain without turning the liveness probe into a database restart loop.
 
-Nginx exposes only the approved health and Prometheus paths. Other `/actuator/*` paths return `404`. Restrict `/actuator/prometheus` at the production load balancer or firewall because this foundation does not create a separate management network.
+Gateway exposes `/health` from the independent Frontend service and only the approved backend health/Prometheus paths. Other `/actuator/*` paths return `404`. Restrict `/actuator/prometheus` at the production load balancer or firewall because this foundation does not create a separate management network.
 
 ## REST smoke test
 
@@ -126,9 +129,9 @@ Send a STOMP `CONNECT` frame containing `authorization:Bearer <access-token>`. T
 ## Logs
 
 ```bash
-docker compose logs -f backend
-docker compose logs -f nginx
-docker compose logs -f postgres
+docker compose --env-file .env -f docker/docker-compose.yml logs -f backend
+docker compose --env-file .env -f docker/docker-compose.yml logs -f gateway frontend
+docker compose --env-file .env -f docker/docker-compose.yml logs -f postgres
 ```
 
 The Nginx access format logs `$uri` without query parameters so reset or verification tokens in browser URLs are not written to access logs.
@@ -151,12 +154,12 @@ If the edge subnet or Nginx address changes, update both Compose networking and 
 - `postgres_data` contains PostgreSQL data.
 - `uploads_data` is mounted at `/app/uploads` for the current local filesystem storage implementation.
 
-Back up these volumes before upgrades. `docker compose down` preserves them; `docker compose down -v` deletes them and should only be used when intentionally discarding data.
+Back up these volumes before upgrades. `docker compose --env-file .env -f docker/docker-compose.yml down` preserves them; the `-v` variant deletes them and should only be used when intentionally discarding data.
 
 ## Shutdown
 
 ```bash
-docker compose down
+docker compose --env-file .env -f docker/docker-compose.yml down
 ```
 
 ## Security notes
@@ -165,7 +168,7 @@ docker compose down
 - Secrets are passed as runtime environment variables and are not copied into either image.
 - The backend runtime image contains only the JRE and application JAR and runs as UID/GID `10001`, with all Linux capabilities dropped and a read-only root filesystem.
 - PostgreSQL has no host port mapping.
-- The gateway image contains the compiled Vite scaffold, not frontend source or Node.js runtime.
+- The frontend image contains only the compiled Vite assets and Nginx runtime; the gateway image contains only its reverse-proxy configuration.
 - No certificate or private key is included. Terminate production TLS at a controlled ingress/load balancer or extend Nginx with externally managed certificates.
 
 ## Current limitations
@@ -176,7 +179,7 @@ This is a deployment foundation, not a claim that the system is fully production
 - Local upload storage is single-instance; multi-instance deployment requires MinIO/S3 work from R16.
 - The in-memory rate limiter is node-local; Redis rate limiting is not implemented.
 - Redis, MinIO, RabbitMQ, and a STOMP broker relay are not included.
-- The included frontend is the current buildable Vite scaffold, not a production-ready chat UI.
+- The frontend is independently built and deployed from `wechatfrontend`; Playwright runtime tests still require real credentials and a running stack.
 - Production TLS, real domains, certificate management, and edge access controls are not configured.
 - Prometheus server, alerting, Grafana, and distributed tracing are not deployed.
 - CI/CD is not implemented.
