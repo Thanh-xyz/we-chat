@@ -7,8 +7,11 @@ Khung folder duoc tao dua tren tai lieu `webchat_system_design.docx`.
 - `wechatfrontend/`: React + Vite client.
 - `wechatbackend/`: Spring Boot backend.
 - `gateway/`: gateway service placeholder cho huong mo rong distributed/microservice.
-- `nginx/`: reverse proxy va load balancing config.
-- `docker/`: Dockerfile/config rieng cho tung service.
+- `docker/`: Docker Compose va toan bo Dockerfile/config runtime cua `backend`, `frontend`, va `gateway`.
+  - `docker-compose.yml`: stack `gateway`, `frontend`, `backend`, `postgres`.
+  - `backend/Dockerfile`: Spring Boot image.
+  - `frontend/Dockerfile`: React/Vite build va static Nginx image.
+  - `gateway/Dockerfile`, `gateway/nginx.conf`: reverse proxy Nginx.
 - `postgres/`: init script va migration database.
 - `redis/`: Redis config placeholder.
 - `monitoring/`: Prometheus va Grafana.
