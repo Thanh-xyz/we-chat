@@ -6,12 +6,12 @@ export const messageApi = {
       signal,
       params: { limit, ...(cursor ? { cursor } : {}) },
     })).data,
-  send: async (conversationId, content) =>
+  send: async (conversationId, { content = null, messageType = 'TEXT', attachmentIds = [] } = {}) =>
     (await apiClient.post(`/conversations/${conversationId}/messages`, {
       content,
-      messageType: 'TEXT',
+      messageType,
       replyToMessageId: null,
-      attachmentIds: [],
+      attachmentIds,
       attachments: [],
     })).data,
 }

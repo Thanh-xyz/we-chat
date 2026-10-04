@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: './src/test/setup.js',
       css: true,
       clearMocks: true,
+      exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
     },
   }
 })

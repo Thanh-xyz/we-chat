@@ -49,6 +49,7 @@ export class WebSocketManager {
       this.client.reconnectDelay = BACKOFF_DELAYS[0]
       this.options.onState('connected')
       this.restoreSubscriptions()
+      this.options.onConnected?.()
     }
     this.client.onStompError = () => this.options.onState('offline')
     this.client.onWebSocketError = () => this.options.onState('reconnecting')
