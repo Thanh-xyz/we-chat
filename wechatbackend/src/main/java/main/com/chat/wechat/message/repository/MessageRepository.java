@@ -16,9 +16,12 @@ import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -176,17 +179,62 @@ public class MessageRepository {
 		if (query == null || query.isBlank()) {
 			return Collections.emptyList();
 		}
-		String normalizedQuery = "%" + query.trim().toLowerCase() + "%";
-		MapSqlParameterSource parameters = new MapSqlParameterSource()
-				.addValue("conversationId", conversationId)
-				.addValue("actorUserId", actorUserId)
-				.addValue("query", normalizedQuery)
-				.addValue("limit", limit);
+		String normalizedQuery = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
+		Map<UUID, Message> matches = new LinkedHashMap<>();
+		searchByContent(conversationId, actorUserId, normalizedQuery, cursor, limit)
+				.forEach(message -> matches.putIfAbsent(message.id(), message));
+		searchBySender(conversationId, actorUserId, normalizedQuery, cursor, limit)
+				.forEach(message -> matches.putIfAbsent(message.id(), message));
+
+		List<Message> orderedMatches = new ArrayList<>(matches.values());
+		orderedMatches.sort(Comparator
+				.comparing(Message::createdAt, Comparator.reverseOrder())
+				.thenComparing(Message::id, Comparator.reverseOrder()));
+		return orderedMatches.size() <= limit
+				? orderedMatches
+				: orderedMatches.subList(0, limit);
+	}
+
+	private List<Message> searchByContent(
+			UUID conversationId,
+			UUID actorUserId,
+			String normalizedQuery,
+			MessageCursor cursor,
+			int limit) {
+		MapSqlParameterSource parameters = searchParameters(conversationId, actorUserId, normalizedQuery, limit);
 		String cursorPredicate = cursorPredicate(cursor, parameters);
 		return namedParameterJdbcTemplate.query("""
-				select distinct m.*
+				select m.*
+				from messages m
+				where m.conversation_id = :conversationId
+				  and m.deleted_at is null
+				  and m.is_recalled = false
+				  and m.recalled_at is null
+				  and not exists (
+				      select 1
+				      from message_user_deletions mud
+				      where mud.message_id = m.id and mud.user_id = :actorUserId
+				  )
+				  and lower(m.content) like :query
+				""" + cursorPredicate + """
+				order by m.created_at desc, m.id desc
+				limit :limit
+				""", parameters, rowMapper());
+	}
+
+	private List<Message> searchBySender(
+			UUID conversationId,
+			UUID actorUserId,
+			String normalizedQuery,
+			MessageCursor cursor,
+			int limit) {
+		MapSqlParameterSource parameters = searchParameters(conversationId, actorUserId, normalizedQuery, limit);
+		String cursorPredicate = cursorPredicate(cursor, parameters);
+		return namedParameterJdbcTemplate.query("""
+				select m.*
 				from messages m
 				join users sender on sender.id = m.sender_id
+				  and sender.deleted_at is null
 				where m.conversation_id = :conversationId
 				  and m.deleted_at is null
 				  and m.is_recalled = false
@@ -197,15 +245,26 @@ public class MessageRepository {
 				      where mud.message_id = m.id and mud.user_id = :actorUserId
 				  )
 				  and (
-				      lower(coalesce(m.content, '')) like :query
-				      or lower(coalesce(sender.username, '')) like :query
-				      or lower(coalesce(sender.email, '')) like :query
-				      or lower(coalesce(sender.display_name, '')) like :query
+				      lower(sender.username) like :query
+				      or lower(sender.email) like :query
+				      or lower(sender.display_name) like :query
 				  )
 				""" + cursorPredicate + """
 				order by m.created_at desc, m.id desc
 				limit :limit
 				""", parameters, rowMapper());
+	}
+
+	private MapSqlParameterSource searchParameters(
+			UUID conversationId,
+			UUID actorUserId,
+			String normalizedQuery,
+			int limit) {
+		return new MapSqlParameterSource()
+				.addValue("conversationId", conversationId)
+				.addValue("actorUserId", actorUserId)
+				.addValue("query", normalizedQuery)
+				.addValue("limit", limit);
 	}
 
 	private String cursorPredicate(MessageCursor cursor, MapSqlParameterSource parameters) {
@@ -350,19 +409,17 @@ public class MessageRepository {
 		return count == null ? 0 : count;
 	}
 
-	public Map<UUID, Integer> countUnreadByConversationIds(UUID actorUserId, List<UUID> conversationIds) {
+	public Map<UUID, Integer> countUnreadByConversationIds(UUID actorUserId, Collection<UUID> conversationIds) {
 		if (conversationIds == null || conversationIds.isEmpty()) {
 			return Collections.emptyMap();
 		}
 		Map<UUID, Integer> result = new LinkedHashMap<>();
-		for (UUID conversationId : conversationIds) {
-			result.put(conversationId, 0);
-		}
 		Object[] args = new Object[conversationIds.size() + 2];
 		args[0] = actorUserId;
 		args[1] = actorUserId;
-		for (int i = 0; i < conversationIds.size(); i++) {
-			args[i + 2] = conversationIds.get(i);
+		int argumentIndex = 2;
+		for (UUID conversationId : conversationIds) {
+			args[argumentIndex++] = conversationId;
 		}
 		jdbcTemplate.query("""
 				select c.id as conversation_id, count(m.id) as unread_count
@@ -384,12 +441,13 @@ public class MessageRepository {
 				       from message_user_deletions mud
 				       where mud.message_id = m.id and mud.user_id = cm.user_id
 				   )
-				where c.id in (%s)
+				where c.deleted_at is null
+				  and c.id in (%s)
 				group by c.id
 				""".formatted(placeholders(conversationIds.size())),
 				(RowCallbackHandler) rs -> result.put(
 						rs.getObject("conversation_id", UUID.class),
-						rs.getInt("unread_count")),
+						Math.toIntExact(rs.getLong("unread_count"))),
 				args);
 		return result;
 	}

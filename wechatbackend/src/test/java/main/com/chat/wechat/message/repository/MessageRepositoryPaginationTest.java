@@ -36,7 +36,8 @@ class MessageRepositoryPaginationTest {
 					id uuid primary key,
 					username varchar(100) not null,
 					email varchar(255) not null,
-					display_name varchar(255) not null
+					display_name varchar(255) not null,
+					deleted_at timestamp with time zone
 				)
 				""");
 		jdbcTemplate.execute("""
@@ -121,7 +122,7 @@ class MessageRepositoryPaginationTest {
 		UUID recalledId = id(2);
 		UUID deletedId = id(3);
 		UUID deletedForUserId = id(4);
-		insertMessage(visibleId, OTHER_USER_ID, "hello visible", createdAt.plusSeconds(4));
+		insertMessage(visibleId, OTHER_USER_ID, "alice hello visible", createdAt.plusSeconds(4));
 		insertMessage(recalledId, OTHER_USER_ID, "hello recalled", createdAt.plusSeconds(3), null, createdAt.plusSeconds(3), true);
 		insertMessage(deletedId, OTHER_USER_ID, "hello deleted", createdAt.plusSeconds(2), createdAt.plusSeconds(2), null, false);
 		insertMessage(deletedForUserId, OTHER_USER_ID, "hello personal delete", createdAt.plusSeconds(1));
@@ -131,9 +132,13 @@ class MessageRepositoryPaginationTest {
 
 		List<Message> history = repository.findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 10);
 		List<Message> search = repository.search(CONVERSATION_ID, ACTOR_ID, "hello", null, 10);
+		List<Message> senderSearch = repository.search(CONVERSATION_ID, ACTOR_ID, "alice", null, 10);
+		List<Message> injectionSearch = repository.search(CONVERSATION_ID, ACTOR_ID, "' OR 1=1 --", null, 10);
 
 		assertThat(history).extracting(Message::id).containsExactly(visibleId, recalledId);
 		assertThat(search).extracting(Message::id).containsExactly(visibleId);
+		assertThat(senderSearch).extracting(Message::id).containsExactly(visibleId);
+		assertThat(injectionSearch).isEmpty();
 	}
 
 	@Test
@@ -146,6 +151,21 @@ class MessageRepositoryPaginationTest {
 		List<Message> messages = repository.findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 10);
 
 		assertThat(messages).extracting(Message::id).containsExactly(id(1));
+	}
+
+	@Test
+	void searchUsesTheSameDeterministicKeysetBoundaryAsHistory() {
+		Instant base = Instant.parse("2026-05-01T00:00:00Z");
+		insertMessage(id(1), ACTOR_ID, "target oldest", base.plusSeconds(1));
+		insertMessage(id(2), ACTOR_ID, "target middle", base.plusSeconds(2));
+		insertMessage(id(3), ACTOR_ID, "target newest", base.plusSeconds(3));
+
+		List<Message> firstPage = repository.search(CONVERSATION_ID, ACTOR_ID, "target", null, 2);
+		MessageCursor cursor = new MessageCursor(firstPage.get(1).createdAt(), firstPage.get(1).id());
+		List<Message> secondPage = repository.search(CONVERSATION_ID, ACTOR_ID, "target", cursor, 2);
+
+		assertThat(firstPage).extracting(Message::id).containsExactly(id(3), id(2));
+		assertThat(secondPage).extracting(Message::id).containsExactly(id(1));
 	}
 
 	private void insertUser(UUID id, String username, String email, String displayName) {

@@ -3,6 +3,7 @@ package main.com.chat.wechat.conversation.service;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.common.exception.ApiException;
+import main.com.chat.wechat.common.search.SearchQueryPolicy;
 import main.com.chat.wechat.conversation.dto.AddMembersRequest;
 import main.com.chat.wechat.conversation.dto.ConversationResponse;
 import main.com.chat.wechat.conversation.dto.CreateConversationRequest;
@@ -385,6 +386,7 @@ public class ConversationService {
 	}
 
 	public List<ConversationResponse> search(UUID actorUserId, String query, boolean includeArchived, int limit, int offset) {
+		SearchQueryPolicy.validate(query);
 		int safeLimit = Math.min(Math.max(limit, 1), 100);
 		int safeOffset = Math.max(offset, 0);
 		return toResponses(actorUserId, conversationRepository.searchByMember(actorUserId, query, includeArchived, safeLimit, safeOffset));
@@ -479,6 +481,9 @@ public class ConversationService {
 	}
 
 	private List<ConversationResponse> toResponses(UUID actorUserId, List<Conversation> conversations) {
+		if (conversations.isEmpty()) {
+			return List.of();
+		}
 		List<UUID> conversationIds = conversations.stream().map(Conversation::id).toList();
 		Map<UUID, List<UUID>> memberIdsByConversationId = conversationMemberRepository.findMemberIdsByConversationIds(conversationIds);
 		Map<UUID, Integer> unreadCountsByConversationId = messageRepository.countUnreadByConversationIds(actorUserId, conversationIds);

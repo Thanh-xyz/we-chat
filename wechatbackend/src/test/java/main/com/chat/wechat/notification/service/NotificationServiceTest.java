@@ -4,6 +4,7 @@ import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.notification.config.NotificationExecutorProperties;
 import main.com.chat.wechat.notification.event.NotificationEvent;
 import main.com.chat.wechat.notification.model.Notification;
 import main.com.chat.wechat.notification.model.NotificationPreference;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -71,7 +73,8 @@ class NotificationServiceTest {
 				userRepository,
 				realtimeEventPublisher,
 				auditLogService,
-				auditJsonWriter);
+				auditJsonWriter,
+				new NotificationExecutorProperties(2, 4, 10, 100, java.time.Duration.ofSeconds(5)));
 		lenient().when(notificationRepository.defaultPreference(any(UUID.class), any(Instant.class)))
 				.thenAnswer(invocation -> defaultPreference(invocation.getArgument(0), invocation.getArgument(1)));
 	}
@@ -105,6 +108,10 @@ class NotificationServiceTest {
 				.extracting(Notification::type)
 				.isEqualTo("MESSAGE");
 		assertThat(notifications).noneMatch(notification -> notification.userId().equals(ACTOR_ID));
+		verify(conversationMemberRepository, times(1)).findMemberIds(CONVERSATION_ID);
+		verify(notificationRepository, times(1)).findPreferencesByUserIds(List.of(BOB_ID, CAROL_ID));
+		verify(notificationRepository, times(1)).saveDeliveries(anyList());
+		verify(notificationRepository, times(1)).countUnreadByUserIds(List.of(BOB_ID, CAROL_ID));
 	}
 
 	@Test

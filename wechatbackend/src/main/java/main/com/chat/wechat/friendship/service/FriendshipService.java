@@ -3,6 +3,7 @@ package main.com.chat.wechat.friendship.service;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
+import main.com.chat.wechat.common.search.SearchQueryPolicy;
 import main.com.chat.wechat.conversation.model.Conversation;
 import main.com.chat.wechat.conversation.model.ConversationMember;
 import main.com.chat.wechat.conversation.model.DirectConversationPair;
@@ -256,6 +257,7 @@ public class FriendshipService {
 
 	public List<PublicUserSearchResponse> searchUsers(UUID actorUserId, String query, int limit, int offset) {
 		findActiveUser(actorUserId);
+		SearchQueryPolicy.validate(query);
 		List<User> users = userRepository.searchActiveUsers(actorUserId, query, safeLimit(limit), safeOffset(offset));
 		List<UUID> userIds = users.stream().map(User::id).toList();
 		Map<UUID, RelationStatus> statuses = friendshipRepository.relationStatuses(actorUserId, userIds);

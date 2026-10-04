@@ -87,6 +87,8 @@ GET /api/users/search?q=tha&limit=50&offset=0
 
 Searches active users by username, display name, and email, but response does not expose email. Users blocked by either side are omitted.
 
+The query is trimmed and case-insensitive. A blank or whitespace-only query returns an empty list; a query longer than 100 characters returns `400 Bad Request`. Results are limited by the existing `limit`/`offset` contract.
+
 Response item:
 
 ```json
