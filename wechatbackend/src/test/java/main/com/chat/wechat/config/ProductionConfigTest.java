@@ -107,7 +107,7 @@ class ProductionConfigTest {
 		assertThat(prodConfig.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
 		assertThat(prodConfig.getProperty("management.endpoint.health.show-components")).isEqualTo("never");
 		assertThat(prodConfig.getProperty("management.endpoint.health.group.liveness.include")).isEqualTo("livenessState");
-		assertThat(prodConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db");
+		assertThat(prodConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db,realtimeRedis");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.boot")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.web")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.messaging")).isEqualTo("INFO");

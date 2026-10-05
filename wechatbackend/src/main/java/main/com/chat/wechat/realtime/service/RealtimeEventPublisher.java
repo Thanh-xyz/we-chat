@@ -1,7 +1,7 @@
 package main.com.chat.wechat.realtime.service;
 
 import main.com.chat.wechat.realtime.dto.RealtimeEvent;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
+import main.com.chat.wechat.notification.dto.NotificationRealtimeEvent;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -11,42 +11,54 @@ import java.util.UUID;
 
 @Service
 public class RealtimeEventPublisher {
-	private static final String USER_CONVERSATION_EVENTS_DESTINATION = "/queue/conversation-events";
-	private static final String USER_NOTIFICATION_TOPIC_TEMPLATE = "/topic/users/%s/notifications";
-	private static final String USER_TOPIC_TEMPLATE = "/topic/users/%s";
+	private final RealtimeBroker realtimeBroker;
+	private final RealtimeDestinationPolicy destinationPolicy;
 
-	private final SimpMessagingTemplate messagingTemplate;
-
-	public RealtimeEventPublisher(SimpMessagingTemplate messagingTemplate) {
-		this.messagingTemplate = messagingTemplate;
+	public RealtimeEventPublisher(
+			RealtimeBroker realtimeBroker,
+			RealtimeDestinationPolicy destinationPolicy) {
+		this.realtimeBroker = realtimeBroker;
+		this.destinationPolicy = destinationPolicy;
 	}
 
 	public void publishToMembersAfterCommit(Collection<UUID> memberIds, RealtimeEvent event) {
 		runAfterCommit(() -> memberIds.stream()
 				.distinct()
-				.forEach(userId -> messagingTemplate.convertAndSendToUser(
-						userId.toString(),
-						USER_CONVERSATION_EVENTS_DESTINATION,
+				.forEach(userId -> realtimeBroker.publish(
+						destinationPolicy.userQueue(userId),
+						event.type(),
 						event)));
 	}
 
 	public void publishToUserAfterCommit(UUID userId, RealtimeEvent event) {
-		runAfterCommit(() -> messagingTemplate.convertAndSendToUser(
-				userId.toString(),
-				USER_CONVERSATION_EVENTS_DESTINATION,
+		runAfterCommit(() -> realtimeBroker.publish(
+				destinationPolicy.userQueue(userId),
+				event.type(),
 				event));
 	}
 
 	public void publishNotificationToUserAfterCommit(UUID userId, Object event) {
-		runAfterCommit(() -> messagingTemplate.convertAndSend(
-				USER_NOTIFICATION_TOPIC_TEMPLATE.formatted(userId),
+		runAfterCommit(() -> realtimeBroker.publish(
+				destinationPolicy.notificationTopic(userId),
+				eventType(event),
 				event));
 	}
 
 	public void publishUserTopicAfterCommit(UUID userId, Object event) {
-		runAfterCommit(() -> messagingTemplate.convertAndSend(
-				USER_TOPIC_TEMPLATE.formatted(userId),
+		runAfterCommit(() -> realtimeBroker.publish(
+				destinationPolicy.userTopic(userId),
+				eventType(event),
 				event));
+	}
+
+	private String eventType(Object event) {
+		if (event instanceof RealtimeEvent realtimeEvent) {
+			return realtimeEvent.type();
+		}
+		if (event instanceof NotificationRealtimeEvent notificationEvent) {
+			return notificationEvent.eventType();
+		}
+		throw new IllegalArgumentException("Unsupported realtime event payload");
 	}
 
 	private void runAfterCommit(Runnable runnable) {
