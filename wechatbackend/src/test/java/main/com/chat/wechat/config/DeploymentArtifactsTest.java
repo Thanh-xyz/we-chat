@@ -52,8 +52,11 @@ class DeploymentArtifactsTest {
 				"${MAIL_PASSWORD:?",
 				"${CORS_ALLOWED_ORIGINS:?",
 				"${WEBSOCKET_ALLOWED_ORIGINS:?",
-				"${TRUSTED_PROXY_CIDRS:?");
-		assertThat(compose).doesNotContain("redis:", "minio:", "rabbitmq:");
+				"${TRUSTED_PROXY_CIDRS:?",
+				"image: redis:7.4.2-alpine3.21",
+				"${REDIS_PASSWORD:?",
+				"condition: service_healthy");
+		assertThat(compose).doesNotContain("minio:", "rabbitmq:");
 	}
 
 	@Test
@@ -101,7 +104,8 @@ class DeploymentArtifactsTest {
 				"docker compose --env-file .env -f docker/docker-compose.yml up -d",
 				"/actuator/health/readiness",
 				"docker compose --env-file .env -f docker/docker-compose.yml down",
-				"The Spring simple WebSocket broker is single-instance",
+				"Redis distributes outbound events between JVMs",
+				"There is no durable outbox",
 				"Local upload storage is single-instance",
 				"The in-memory rate limiter is node-local",
 				"CI/CD is not implemented");
