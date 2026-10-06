@@ -33,7 +33,13 @@ export function ChatPage() {
   const retryRealtime = useRealtimeStore((state) => state.retry)
   const sendTyping = useRealtimeStore((state) => state.sendTyping)
   const notificationPanel = useNotificationStore((state) => state.open)
-  const notificationData = useNotificationStore((state) => ({ notifications: state.notifications, status: state.status, error: state.error }))
+  const notificationNotifications = useNotificationStore((state) => state.notifications)
+  const notificationStatus = useNotificationStore((state) => state.status)
+  const notificationError = useNotificationStore((state) => state.error)
+  const notificationData = useMemo(
+    () => ({ notifications: notificationNotifications, status: notificationStatus, error: notificationError }),
+    [notificationNotifications, notificationStatus, notificationError],
+  )
   const setNotificationPanel = useNotificationStore((state) => state.setOpen)
   const loadNotifications = useNotificationStore((state) => state.load)
   const markNotificationRead = useNotificationStore((state) => state.markRead)
