@@ -1,6 +1,6 @@
 # Docker Compose deployment foundation
 
-This stack provides a reproducible single-instance deployment foundation:
+This stack provides a reproducible deployment foundation with a Redis Pub/Sub bridge for realtime fanout:
 
 ```text
 Browser / operator
@@ -13,9 +13,12 @@ Gateway Nginx :${HTTP_PORT:-8080}
    |-- approved /actuator paths -+          |
                                              v
                                       PostgreSQL :5432
+                                             ^
+                                             |
+                                      Redis :6379
 ```
 
-The Compose services are `gateway`, `frontend`, `backend`, and `postgres`. Only Gateway publishes a host port. Frontend and Backend are reachable only on the private app network; PostgreSQL is reachable only on the private database network.
+The Compose services are `gateway`, `frontend`, `backend`, `postgres`, and `redis`. Only Gateway publishes a host port. Frontend and Backend are reachable only on the private app network; PostgreSQL is reachable only on the private database network; Redis is internal-only and has no persistent volume.
 
 ## Prerequisites
 
@@ -57,6 +60,10 @@ Edit `.env` and set every blank required value. Compose rejects missing or empty
 | `CORS_ALLOWED_ORIGINS` | Yes | Comma-separated exact REST browser origins; never use `*`. |
 | `WEBSOCKET_ALLOWED_ORIGINS` | Yes | Comma-separated exact WebSocket origins. |
 | `TRUSTED_PROXY_CIDRS` | Yes | Tomcat trusted-proxy expression. The example matches only the fixed Compose Nginx address. |
+| `REDIS_PASSWORD` | Yes | Redis authentication password; never expose Redis on a host port. |
+| `REALTIME_DISTRIBUTED_ENABLED` | No | Defaults to `true` in Compose/prod and enables the Redis realtime bridge. |
+| `REALTIME_REDIS_CHANNEL` | No | Fixed Pub/Sub channel shared by all backend replicas. |
+| `INSTANCE_ID` | No | Optional instance identifier; blank generates a per-JVM UUID. |
 
 Cleanup retention, batch, run-cap, and schedule variables are listed in `.env.example`. See `docs/data-retention.md` before changing them, especially the audit-log policy.
 
@@ -82,6 +89,8 @@ Startup ordering is:
 ```text
 PostgreSQL pg_isready
         v
+Redis PING + PostgreSQL pg_isready
+        v
 Spring Boot starts, runs Flyway, then readiness reports UP
         v
 Frontend serves static files and Gateway starts routing traffic
@@ -101,7 +110,7 @@ curl -fsS http://localhost:8080/actuator/health/readiness
 curl -fsS http://localhost:8080/actuator/prometheus
 ```
 
-Liveness checks only application process state. Readiness also checks the datasource, so PostgreSQL failure removes the backend from the healthy startup chain without turning the liveness probe into a database restart loop.
+Liveness checks only application process state. Production readiness checks the datasource and Redis bridge, so PostgreSQL or Redis failure removes the backend from the healthy startup chain without turning liveness into a dependency restart loop.
 
 Gateway exposes `/health` from the independent Frontend service and only the approved backend health/Prometheus paths. Other `/actuator/*` paths return `404`. Restrict `/actuator/prometheus` at the production load balancer or firewall because this foundation does not create a separate management network.
 
@@ -124,14 +133,14 @@ The backend endpoint is `/ws` and uses STOMP authentication. After obtaining a v
 wscat -c ws://localhost:8080/ws -H 'Origin: http://localhost:8080'
 ```
 
-Send a STOMP `CONNECT` frame containing `authorization:Bearer <access-token>`. The proxy uses HTTP/1.1 upgrade headers and a one-hour idle read timeout. This verifies only the current single-instance broker; it is not a distributed WebSocket test.
+Send a STOMP `CONNECT` frame containing `authorization:Bearer <access-token>`. The proxy uses HTTP/1.1 upgrade headers and a one-hour idle read timeout. Browser destinations and frames are unchanged; after commit, the backend publishes the same event through Redis so a socket connected to another backend replica can receive it.
 
 ## Logs
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml logs -f backend
 docker compose --env-file .env -f docker/docker-compose.yml logs -f gateway frontend
-docker compose --env-file .env -f docker/docker-compose.yml logs -f postgres
+docker compose --env-file .env -f docker/docker-compose.yml logs -f postgres redis
 ```
 
 The Nginx access format logs `$uri` without query parameters so reset or verification tokens in browser URLs are not written to access logs.
@@ -153,6 +162,7 @@ If the edge subnet or Nginx address changes, update both Compose networking and 
 
 - `postgres_data` contains PostgreSQL data.
 - `uploads_data` is mounted at `/app/uploads` for the current local filesystem storage implementation.
+- Redis Pub/Sub intentionally has no data volume: it is a transient realtime transport, not a durable event log.
 
 Back up these volumes before upgrades. `docker compose --env-file .env -f docker/docker-compose.yml down` preserves them; the `-v` variant deletes them and should only be used when intentionally discarding data.
 
@@ -175,10 +185,10 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 
 This is a deployment foundation, not a claim that the system is fully production-ready:
 
-- The Spring simple WebSocket broker is single-instance and not distributed.
+- The Spring simple WebSocket broker remains process-local for socket sessions; Redis distributes outbound events between JVMs. Pub/Sub is best-effort: an event published while Redis is unavailable, or while a subscriber is disconnected, is not replayed. There is no durable outbox, ordering guarantee across event types, or cross-region bridge.
 - Local upload storage is single-instance; multi-instance deployment requires MinIO/S3 work from R16.
 - The in-memory rate limiter is node-local; Redis rate limiting is not implemented.
-- Redis, MinIO, RabbitMQ, and a STOMP broker relay are not included.
+- Redis is included only for the R5 realtime bridge; Redis-backed sessions, rate limits, caches, queues, and storage are not implemented.
 - The frontend is independently built and deployed from `wechatfrontend`; Playwright runtime tests still require real credentials and a running stack.
 - Production TLS, real domains, certificate management, and edge access controls are not configured.
 - Prometheus server, alerting, Grafana, and distributed tracing are not deployed.
