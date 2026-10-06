@@ -45,9 +45,10 @@ Edit `.env` and set every blank required value. Compose rejects missing or empty
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `HTTP_PORT` | No | Host port published by Gateway; defaults to `8080`. |
-| `DB_NAME` | Yes | PostgreSQL database and JDBC database name. |
-| `DB_USERNAME` | Yes | PostgreSQL and JDBC username. |
-| `DB_PASSWORD` | Yes | PostgreSQL and JDBC password. |
+| `DB_NAME` | Yes | Local Compose PostgreSQL database name. |
+| `DB_USERNAME` | Yes | Local Compose PostgreSQL and JDBC username. |
+| `DB_PASSWORD` | Yes | Local Compose PostgreSQL and JDBC password. |
+| `DATABASE_URL` | No | Optional complete JDBC URL for managed/external PostgreSQL; when blank, Compose builds the local `postgres:5432` URL from `DB_NAME`. |
 | `JWT_SECRET` | Yes | JWT HMAC secret; must be random and at least 32 characters. |
 | `JWT_ISSUER` | No | JWT issuer; defaults to `wechat`. |
 | `MAIL_HOST` | Yes | Production SMTP host. |
@@ -61,13 +62,16 @@ Edit `.env` and set every blank required value. Compose rejects missing or empty
 | `WEBSOCKET_ALLOWED_ORIGINS` | Yes | Comma-separated exact WebSocket origins. |
 | `TRUSTED_PROXY_CIDRS` | Yes | Tomcat trusted-proxy expression. The example matches only the fixed Compose Nginx address. |
 | `REDIS_PASSWORD` | Yes | Redis authentication password; never expose Redis on a host port. |
+| `REDIS_HOST` | No | Redis hostname; use `redis` for the local Compose service or a managed Redis hostname. |
+| `REDIS_PORT` | No | Redis port; defaults to `6379`. |
+| `REDIS_SSL_ENABLED` | No | Enables TLS for managed Redis; defaults to `false` for local Redis. |
 | `REALTIME_DISTRIBUTED_ENABLED` | No | Defaults to `true` in Compose/prod and enables the Redis realtime bridge. |
 | `REALTIME_REDIS_CHANNEL` | No | Fixed Pub/Sub channel shared by all backend replicas. |
 | `INSTANCE_ID` | No | Optional instance identifier; blank generates a per-JVM UUID. |
 
 Cleanup retention, batch, run-cap, and schedule variables are listed in `.env.example`. See `docs/data-retention.md` before changing them, especially the audit-log policy.
 
-`DB_HOST` and `DB_PORT` are intentionally not configurable in this Compose stack: service discovery fixes them to `postgres:5432`. The Compose file constructs the application's `DATABASE_URL` from those internal values.
+When `DATABASE_URL` is blank, Compose connects the application to the local `postgres:5432` service. Set `DATABASE_URL` to a complete JDBC URL to use managed PostgreSQL without changing the application configuration. Redis follows the same pattern through `REDIS_HOST`, `REDIS_PORT`, and `REDIS_SSL_ENABLED`.
 
 The checked-in localhost origins and callback URLs are only runnable defaults for this local Compose topology. Replace them with the real HTTPS frontend origin before an internet-facing deployment.
 
