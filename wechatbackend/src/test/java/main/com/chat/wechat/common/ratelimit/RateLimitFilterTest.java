@@ -30,9 +30,9 @@ class RateLimitFilterTest {
 		request.addHeader("X-Real-IP", "2.2.2.2");
 		request.addHeader("Forwarded", "for=3.3.3.3");
 
-		assertThat(capturedClientKey(request)).isEqualTo("10.0.0.10");
-		assertThat(capturedClientKey(loginRequest("2001:db8::10", "2001:db8::99")))
-				.isEqualTo("2001:db8::10");
+		assertThat(capturedClientKey(request).value()).isEqualTo("ip:10.0.0.10");
+		assertThat(capturedClientKey(loginRequest("2001:db8::10", "2001:db8::99")).value())
+				.isEqualTo("ip:2001:db8::10");
 	}
 
 	@Test
@@ -51,21 +51,21 @@ class RateLimitFilterTest {
 	@Test
 	void emptyTrustedProxyConfigurationTrustsNoProxy() throws Exception {
 		assertThat(clientKeyThroughNativeProxy("10.0.0.20", "8.8.8.8", ""))
-				.isEqualTo("10.0.0.20");
+				.isEqualTo("ip:10.0.0.20");
 	}
 
 	@Test
 	void trustedProxyCanSupplyClientAddress() throws Exception {
 		assertThat(clientKeyThroughNativeProxy("10.0.0.20", "8.8.8.8", "10.0.0.0/8"))
-				.isEqualTo("8.8.8.8");
+				.isEqualTo("ip:8.8.8.8");
 		assertThat(clientKeyThroughNativeProxy("fd00::20", "2001:4860:4860::8888", "fd00::/8"))
-				.isEqualTo("2001:4860:4860::8888");
+				.isEqualTo("ip:2001:4860:4860::8888");
 	}
 
 	@Test
 	void untrustedProxyCannotSupplyClientAddress() throws Exception {
 		assertThat(clientKeyThroughNativeProxy("192.0.2.20", "8.8.8.8", "10.0.0.0/8"))
-				.isEqualTo("192.0.2.20");
+				.isEqualTo("ip:192.0.2.20");
 	}
 
 	@Test
@@ -74,12 +74,12 @@ class RateLimitFilterTest {
 				"10.0.0.20",
 				"198.51.100.7, 10.0.0.2, 10.0.0.3",
 				"10.0.0.0/8"))
-				.isEqualTo("198.51.100.7");
+				.isEqualTo("ip:198.51.100.7");
 		assertThat(clientKeyThroughNativeProxy(
 				"10.0.0.20",
 				"1.1.1.1, 198.51.100.7, 10.0.0.3",
 				"10.0.0.0/8"))
-				.isEqualTo("198.51.100.7");
+				.isEqualTo("ip:198.51.100.7");
 	}
 
 	@Test
@@ -95,9 +95,9 @@ class RateLimitFilterTest {
 		assertThat(third.getStatus()).isEqualTo(429);
 	}
 
-	private String capturedClientKey(MockHttpServletRequest request) throws Exception {
-		AtomicReference<String> clientKey = new AtomicReference<>();
-		RateLimiter capturingLimiter = (bucketName, key, limit) -> {
+	private RateLimitKey capturedClientKey(MockHttpServletRequest request) throws Exception {
+		AtomicReference<RateLimitKey> clientKey = new AtomicReference<>();
+		RateLimiter capturingLimiter = (operation, key, limit) -> {
 			clientKey.set(key);
 			return true;
 		};
@@ -109,8 +109,8 @@ class RateLimitFilterTest {
 			String proxyAddress,
 			String forwardedFor,
 			String internalProxies) throws Exception {
-		AtomicReference<String> clientKey = new AtomicReference<>();
-		RateLimiter capturingLimiter = (bucketName, key, limit) -> {
+		AtomicReference<RateLimitKey> clientKey = new AtomicReference<>();
+		RateLimiter capturingLimiter = (operation, key, limit) -> {
 			clientKey.set(key);
 			return true;
 		};
@@ -129,7 +129,7 @@ class RateLimitFilterTest {
 						servletRequest,
 						servletResponse,
 						new MockFilterChain()));
-		return clientKey.get();
+		return clientKey.get().value();
 	}
 
 	private RateLimitFilter filter(RateLimiter rateLimiter, int loginCapacity) {

@@ -1,6 +1,6 @@
 # Docker Compose deployment foundation
 
-This stack provides a reproducible deployment foundation with a Redis Pub/Sub bridge for realtime fanout:
+This stack provides a reproducible deployment foundation with Redis for realtime fanout and distributed rate limiting:
 
 ```text
 Browser / operator
@@ -66,6 +66,13 @@ Edit `.env` and set every blank required value. Compose rejects missing or empty
 | `REDIS_PORT` | No | Redis port; defaults to `6379`. |
 | `REDIS_SSL_ENABLED` | No | Enables TLS for managed Redis; defaults to `false` for local Redis. |
 | `REALTIME_DISTRIBUTED_ENABLED` | No | Defaults to `true` in Compose/prod and enables the Redis realtime bridge. |
+| `RATE_LIMIT_DISTRIBUTED_ENABLED` | No | Defaults to `true` in Compose/prod; production requires Redis-backed rate limiting. |
+| `RATE_LIMIT_*_CAPACITY` / `RATE_LIMIT_*_REFILL_MINUTES` | No | Existing per-operation capacities/refill intervals; defaults are listed in `docs/architecture/rate-limiting.md`. |
+| `RATE_LIMIT_NAMESPACE` | No | Redis key namespace for rate limiting; defaults to `webchat:ratelimit`. |
+| `RATE_LIMIT_ENVIRONMENT` | No | Environment segment in rate-limit keys; defaults to `compose`. |
+| `RATE_LIMIT_FALLBACK_CAPACITY` | No | Per-JVM conservative outage fallback capacity; defaults to `1`. |
+| `RATE_LIMIT_FALLBACK_REFILL_MINUTES` | No | Conservative fallback interval; defaults to `1`. |
+| `RATE_LIMIT_FALLBACK_MAX_ENTRIES` | No | Maximum local fallback entries; defaults to `10000`. |
 | `REALTIME_REDIS_CHANNEL` | No | Fixed Pub/Sub channel shared by all backend replicas. |
 | `INSTANCE_ID` | No | Optional instance identifier; blank generates a per-JVM UUID. |
 
@@ -114,7 +121,7 @@ curl -fsS http://localhost:8080/actuator/health/readiness
 curl -fsS http://localhost:8080/actuator/prometheus
 ```
 
-Liveness checks only application process state. Production readiness checks the datasource and Redis bridge, so PostgreSQL or Redis failure removes the backend from the healthy startup chain without turning liveness into a dependency restart loop.
+Liveness checks only application process state. Production readiness checks the datasource, realtime Redis, and rate-limit Redis, so PostgreSQL or Redis failure removes the backend from the healthy startup chain without turning liveness into a dependency restart loop.
 
 Gateway exposes `/health` from the independent Frontend service and only the approved backend health/Prometheus paths. Other `/actuator/*` paths return `404`. Restrict `/actuator/prometheus` at the production load balancer or firewall because this foundation does not create a separate management network.
 
@@ -184,6 +191,7 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 - PostgreSQL has no host port mapping.
 - The frontend image contains only the compiled Vite assets and Nginx runtime; the gateway image contains only its reverse-proxy configuration.
 - No certificate or private key is included. Terminate production TLS at a controlled ingress/load balancer or extend Nginx with externally managed certificates.
+- Raw JWT is never used as rate-limit identity or key; see `docs/architecture/rate-limiting.md` for the policy and failure semantics.
 
 ## Current limitations
 
@@ -191,8 +199,8 @@ This is a deployment foundation, not a claim that the system is fully production
 
 - The Spring simple WebSocket broker remains process-local for socket sessions; Redis distributes outbound events between JVMs. Pub/Sub is best-effort: an event published while Redis is unavailable, or while a subscriber is disconnected, is not replayed. There is no durable outbox, ordering guarantee across event types, or cross-region bridge.
 - Local upload storage is single-instance; multi-instance deployment requires MinIO/S3 work from R16.
-- The in-memory rate limiter is node-local; Redis rate limiting is not implemented.
-- Redis is included only for the R5 realtime bridge; Redis-backed sessions, rate limits, caches, queues, and storage are not implemented.
+- Local/test rate limiting is node-local by design; Compose/prod uses the R6 Redis-backed shared limiter.
+- Redis-backed authentication sessions, caches, queues, and storage are not implemented; R11 and R16 remain future work.
 - The frontend is independently built and deployed from `wechatfrontend`; Playwright runtime tests still require real credentials and a running stack.
 - Production TLS, real domains, certificate management, and edge access controls are not configured.
 - Prometheus server, alerting, Grafana, and distributed tracing are not deployed.

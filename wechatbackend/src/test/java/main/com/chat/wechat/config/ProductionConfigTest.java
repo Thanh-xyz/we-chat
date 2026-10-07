@@ -107,7 +107,8 @@ class ProductionConfigTest {
 		assertThat(prodConfig.getProperty("management.endpoint.health.show-details")).isEqualTo("never");
 		assertThat(prodConfig.getProperty("management.endpoint.health.show-components")).isEqualTo("never");
 		assertThat(prodConfig.getProperty("management.endpoint.health.group.liveness.include")).isEqualTo("livenessState");
-		assertThat(prodConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db,realtimeRedis");
+		assertThat(prodConfig.getProperty("management.endpoint.health.group.readiness.include")).isEqualTo("readinessState,db,realtimeRedis,rateLimitRedis");
+		assertThat(prodConfig.getProperty("app.rate-limit.distributed-enabled")).isEqualTo("${RATE_LIMIT_DISTRIBUTED_ENABLED:true}");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.boot")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.web")).isEqualTo("INFO");
 		assertThat(prodConfig.getProperty("logging.level.org.springframework.messaging")).isEqualTo("INFO");

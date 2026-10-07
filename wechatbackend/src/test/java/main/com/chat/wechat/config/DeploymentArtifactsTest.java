@@ -55,6 +55,8 @@ class DeploymentArtifactsTest {
 				"${TRUSTED_PROXY_CIDRS:?",
 				"image: redis:7.4.2-alpine3.21",
 				"${REDIS_PASSWORD:?",
+				"RATE_LIMIT_DISTRIBUTED_ENABLED",
+				"RATE_LIMIT_AUTH_LOGIN_CAPACITY",
 				"condition: service_healthy");
 		assertThat(compose).doesNotContain("minio:", "rabbitmq:");
 	}
@@ -105,9 +107,11 @@ class DeploymentArtifactsTest {
 				"/actuator/health/readiness",
 				"docker compose --env-file .env -f docker/docker-compose.yml down",
 				"Redis distributes outbound events between JVMs",
+				"Compose/prod uses the R6 Redis-backed shared limiter",
+				"Raw JWT is never used as rate-limit identity or key",
 				"There is no durable outbox",
 				"Local upload storage is single-instance",
-				"The in-memory rate limiter is node-local",
+				"Local/test rate limiting is node-local",
 				"CI/CD is not implemented");
 	}
 
