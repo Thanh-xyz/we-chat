@@ -1,6 +1,7 @@
 package main.com.chat.wechat.realtime.security;
 
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
+import main.com.chat.wechat.common.ratelimit.RateLimitKey;
 import main.com.chat.wechat.common.ratelimit.RateLimiter;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.JwtTokenService;
@@ -22,6 +23,7 @@ import org.springframework.security.access.AccessDeniedException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -97,7 +99,7 @@ class WebSocketAuthChannelInterceptorTest {
 				StompCommand.SEND,
 				"/app/conversations/" + CONVERSATION_ID + "/messages",
 				USER_ID);
-		when(rateLimiter.tryConsume("ws-message-send", USER_ID.toString(), new RateLimitProperties.Limit(60, 1)))
+		when(rateLimiter.tryConsume("ws-message-send", RateLimitKey.user(USER_ID), new RateLimitProperties.Limit(60, 1)))
 				.thenReturn(true);
 		when(conversationMemberRepository.isMember(CONVERSATION_ID, USER_ID)).thenReturn(false);
 
@@ -111,7 +113,7 @@ class WebSocketAuthChannelInterceptorTest {
 				StompCommand.SEND,
 				"/app/conversations/" + CONVERSATION_ID + "/messages",
 				USER_ID);
-		when(rateLimiter.tryConsume("ws-message-send", USER_ID.toString(), new RateLimitProperties.Limit(60, 1)))
+		when(rateLimiter.tryConsume("ws-message-send", RateLimitKey.user(USER_ID), new RateLimitProperties.Limit(60, 1)))
 				.thenReturn(false);
 
 		assertThatThrownBy(() -> interceptor.preSend(message, null))
@@ -212,12 +214,23 @@ class WebSocketAuthChannelInterceptorTest {
 						new RateLimitProperties.Limit(3, 15),
 						new RateLimitProperties.Limit(60, 1),
 						new RateLimitProperties.Limit(20, 1)));
-		when(rateLimiter.tryConsume("ws-connect", malformedToken, new RateLimitProperties.Limit(20, 1)))
+		when(rateLimiter.tryConsume("ws-connect", RateLimitKey.ip("unknown"), new RateLimitProperties.Limit(20, 1)))
 				.thenReturn(true);
 
 		assertThatThrownBy(() -> canonicalInterceptor.preSend(connectMessage(malformedToken), null))
 				.isInstanceOf(AccessDeniedException.class)
 				.hasMessage("Invalid WebSocket token");
+	}
+
+	@Test
+	void connectRateLimitUsesHandshakePeerAddressInsteadOfBearerToken() {
+		String rawTokenMarker = "RAW_TOKEN_TEST_MARKER";
+		when(rateLimiter.tryConsume("ws-connect", RateLimitKey.ip("198.51.100.17"), new RateLimitProperties.Limit(20, 1)))
+				.thenReturn(false);
+
+		assertThatThrownBy(() -> interceptor.preSend(connectMessage(rawTokenMarker, "198.51.100.17"), null))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("WebSocket connect rate limit exceeded");
 	}
 
 	@Test
@@ -246,8 +259,17 @@ class WebSocketAuthChannelInterceptorTest {
 	}
 
 	private Message<byte[]> connectMessage(String token) {
+		return connectMessage(token, null);
+	}
+
+	private Message<byte[]> connectMessage(String token, String clientIp) {
 		StompHeaderAccessor accessor = StompHeaderAccessor.create(StompCommand.CONNECT);
 		accessor.setNativeHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+		if (clientIp != null) {
+			HashMap<String, Object> attributes = new HashMap<>();
+			attributes.put(WebSocketClientIpHandshakeInterceptor.CLIENT_IP_ATTRIBUTE, clientIp);
+			accessor.setSessionAttributes(attributes);
+		}
 		return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 	}
 }

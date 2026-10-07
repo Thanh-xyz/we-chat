@@ -1,6 +1,7 @@
 package main.com.chat.wechat.config;
 
 import main.com.chat.wechat.realtime.security.WebSocketAuthChannelInterceptor;
+import main.com.chat.wechat.realtime.security.WebSocketClientIpHandshakeInterceptor;
 import main.com.chat.wechat.realtime.config.WebSocketProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
@@ -39,6 +40,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 	@Override
 	public void registerStompEndpoints(StompEndpointRegistry registry) {
 		registry.addEndpoint("/ws")
+				.addInterceptors(new WebSocketClientIpHandshakeInterceptor())
 				.setAllowedOriginPatterns(webSocketProperties.allowedOrigins().toArray(String[]::new));
 	}
 }

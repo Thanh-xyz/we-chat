@@ -2,6 +2,7 @@ package main.com.chat.wechat.realtime.security;
 
 import main.com.chat.wechat.common.security.JwtTokenService;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
+import main.com.chat.wechat.common.ratelimit.RateLimitKey;
 import main.com.chat.wechat.common.ratelimit.RateLimiter;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
 import main.com.chat.wechat.user.repository.UserRepository;
@@ -74,7 +75,10 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		if (token == null) {
 			throw new AccessDeniedException("WebSocket authentication required");
 		}
-		if (!rateLimiter.tryConsume("ws-connect", token, rateLimitProperties.websocketConnect())) {
+		if (!rateLimiter.tryConsume(
+				"ws-connect",
+				RateLimitKey.ip(clientIp(accessor)),
+				rateLimitProperties.websocketConnect())) {
 			throw new AccessDeniedException("WebSocket connect rate limit exceeded");
 		}
 		var claims = jwtTokenService.validateAccessToken(token)
@@ -95,7 +99,7 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		}
 		WebSocketUserPrincipal principal = authenticatedPrincipal(accessor);
 		if (accessor.getCommand() == StompCommand.SEND
-				&& !rateLimiter.tryConsume("ws-message-send", principal.userId().toString(), rateLimitProperties.messageSend())) {
+				&& !rateLimiter.tryConsume("ws-message-send", RateLimitKey.user(principal.userId()), rateLimitProperties.messageSend())) {
 			throw new AccessDeniedException("WebSocket message rate limit exceeded");
 		}
 		if (!conversationMemberRepository.isMember(conversationId, principal.userId())) {
@@ -193,6 +197,14 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 			throw new AccessDeniedException("WebSocket authentication required");
 		}
 		return principal;
+	}
+
+	private String clientIp(StompHeaderAccessor accessor) {
+		if (accessor.getSessionAttributes() == null) {
+			return "unknown";
+		}
+		Object value = accessor.getSessionAttributes().get(WebSocketClientIpHandshakeInterceptor.CLIENT_IP_ATTRIBUTE);
+		return value instanceof String ip ? ip : "unknown";
 	}
 
 	private String resolveBearerToken(StompHeaderAccessor accessor) {

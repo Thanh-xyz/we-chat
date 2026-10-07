@@ -33,33 +33,25 @@ public class RateLimitFilter extends OncePerRequestFilter {
 			HttpServletRequest request,
 			HttpServletResponse response,
 			FilterChain filterChain) throws ServletException, IOException {
-		RateLimitProperties.Limit limit = limitFor(request);
-		if (limit != null && !rateLimiter.tryConsume(bucketName(request), clientKey(request), limit)) {
+		Policy policy = policyFor(request);
+		if (policy != null && !rateLimiter.tryConsume(policy.operation(), RateLimitKey.ip(request.getRemoteAddr()), policy.limit())) {
 			writeTooManyRequests(request, response);
 			return;
 		}
 		filterChain.doFilter(request, response);
 	}
 
-	private RateLimitProperties.Limit limitFor(HttpServletRequest request) {
+	private Policy policyFor(HttpServletRequest request) {
 		if (!"POST".equalsIgnoreCase(request.getMethod())) {
 			return null;
 		}
 		return switch (request.getRequestURI()) {
-			case "/api/auth/login" -> rateLimitProperties.authLogin();
-			case "/api/auth/register" -> rateLimitProperties.authRegister();
-			case "/api/auth/resend-verification" -> rateLimitProperties.authResendVerification();
-			case "/api/auth/refresh", "/api/auth/refresh-token" -> rateLimitProperties.authRefresh();
+			case "/api/auth/login" -> new Policy("auth-login", rateLimitProperties.authLogin());
+			case "/api/auth/register" -> new Policy("auth-register", rateLimitProperties.authRegister());
+			case "/api/auth/resend-verification" -> new Policy("auth-resend-verification", rateLimitProperties.authResendVerification());
+			case "/api/auth/refresh", "/api/auth/refresh-token" -> new Policy("auth-refresh", rateLimitProperties.authRefresh());
 			default -> null;
 		};
-	}
-
-	private String bucketName(HttpServletRequest request) {
-		return request.getMethod() + ":" + request.getRequestURI();
-	}
-
-	private String clientKey(HttpServletRequest request) {
-		return request.getRemoteAddr() == null ? "unknown" : request.getRemoteAddr();
 	}
 
 	private void writeTooManyRequests(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -72,5 +64,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
 				"Rate limit exceeded",
 				request.getRequestURI(),
 				null));
+	}
+
+	private record Policy(String operation, RateLimitProperties.Limit limit) {
 	}
 }
