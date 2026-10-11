@@ -1,6 +1,7 @@
 package main.com.chat.wechat.cleanup;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 import java.util.Locale;
@@ -13,8 +14,10 @@ public record CleanupProperties(
 		Policy passwordResetTokens,
 		Policy emailVerificationTokens,
 		Policy notifications,
-		AuditPolicy auditLogs) {
+		AuditPolicy auditLogs,
+		Policy attachments) {
 
+	@ConstructorBinding
 	public CleanupProperties {
 		refreshTokens = refreshTokens == null
 				? new Policy(true, Duration.ofDays(30), 500, 20, Duration.ofHours(1), Duration.ofMinutes(5))
@@ -38,7 +41,19 @@ public record CleanupProperties(
 						100,
 						Duration.ofDays(1),
 						Duration.ofMinutes(45))
-				: auditLogs;
+					: auditLogs;
+		attachments = attachments == null
+				? new Policy(true, Duration.ofDays(1), 500, 20, Duration.ofHours(1), Duration.ofMinutes(20))
+				: attachments;
+	}
+
+	public CleanupProperties(
+			Policy refreshTokens,
+			Policy passwordResetTokens,
+			Policy emailVerificationTokens,
+			Policy notifications,
+			AuditPolicy auditLogs) {
+		this(refreshTokens, passwordResetTokens, emailVerificationTokens, notifications, auditLogs, null);
 	}
 
 	public interface JobPolicy {

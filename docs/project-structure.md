@@ -15,7 +15,7 @@ Khung folder duoc tao dua tren tai lieu `webchat_system_design.docx`.
 - `postgres/`: init script va migration database.
 - `redis/`: Redis config placeholder.
 - `monitoring/`: Prometheus va Grafana.
-- `storage/minio/`: MinIO/S3-compatible storage config placeholder.
+- `wechatbackend/src/main/.../attachment/storage`: storage abstraction, local test implementation and private MinIO/S3-compatible implementation.
 - `docs/`: tai lieu kien truc, API, database, deployment, monitoring.
 
 ## Backend Modules

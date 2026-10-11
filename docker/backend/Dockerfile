@@ -11,7 +11,6 @@ FROM eclipse-temurin:21-jre-alpine-3.24 AS runtime
 
 RUN addgroup -S app \
 	&& adduser -S -G app -u 10001 app \
-	&& mkdir -p /app/uploads \
 	&& chown -R app:app /app
 
 WORKDIR /app

@@ -90,6 +90,7 @@ public class MediaRepository {
 					  on uploader.id = ma.uploader_id
 					where ma.id = ?
 					  and ma.deleted_at is null
+					  and ma.storage_status = 'READY'
 					  and (
 					      ma.message_id is null
 					      or (
@@ -122,7 +123,7 @@ public class MediaRepository {
 	public int softDelete(UUID attachmentId, Instant deletedAt) {
 		return jdbcTemplate.update("""
 				update message_attachments
-				set deleted_at = ?, updated_at = ?
+				set deleted_at = ?, storage_status = case when storage_status = 'READY' then 'DELETE_PENDING' else storage_status end, updated_at = ?
 				where id = ? and deleted_at is null
 				""", Timestamp.from(deletedAt), Timestamp.from(deletedAt), attachmentId);
 	}
@@ -148,6 +149,7 @@ public class MediaRepository {
 				  on m.id = ma.message_id
 				where ma.conversation_id = ?
 				  and ma.deleted_at is null
+				  and ma.storage_status = 'READY'
 				  and ma.message_id is not null
 				  and m.deleted_at is null
 				  and m.is_recalled = false
@@ -201,6 +203,7 @@ public class MediaRepository {
 				  on uploader.id = ma.uploader_id
 				where ma.conversation_id = ?
 				  and ma.deleted_at is null
+				  and ma.storage_status = 'READY'
 				  and m.deleted_at is null
 				  and m.is_recalled = false
 				  and m.recalled_at is null

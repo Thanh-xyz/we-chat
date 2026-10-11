@@ -1,7 +1,9 @@
 package main.com.chat.wechat.media.service;
 
 import main.com.chat.wechat.attachment.dto.AttachmentDownloadResponse;
+import main.com.chat.wechat.attachment.dto.AttachmentDownloadUrlResponse;
 import main.com.chat.wechat.attachment.storage.FileStorageService;
+import main.com.chat.wechat.attachment.storage.StorageProperties;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ApiException;
@@ -21,6 +23,8 @@ import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -29,6 +33,7 @@ import java.util.UUID;
 
 @Service
 public class MediaGalleryService {
+	private static final Logger LOGGER = LoggerFactory.getLogger(MediaGalleryService.class);
 	private static final int DEFAULT_LIMIT = 50;
 	private static final int MAX_LIMIT = 100;
 
@@ -39,6 +44,7 @@ public class MediaGalleryService {
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
+	private final StorageProperties storageProperties;
 
 	public MediaGalleryService(
 			MediaRepository mediaRepository,
@@ -47,7 +53,8 @@ public class MediaGalleryService {
 			FileStorageService fileStorageService,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
-			RealtimeEventPublisher realtimeEventPublisher) {
+			RealtimeEventPublisher realtimeEventPublisher,
+			StorageProperties storageProperties) {
 		this.mediaRepository = mediaRepository;
 		this.conversationService = conversationService;
 		this.userRepository = userRepository;
@@ -55,6 +62,7 @@ public class MediaGalleryService {
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
+		this.storageProperties = storageProperties;
 	}
 
 	public MediaGalleryResponse listMedia(
@@ -133,6 +141,9 @@ public class MediaGalleryService {
 	public AttachmentDownloadResponse download(UUID actorUserId, UUID attachmentId) {
 		findActiveUser(actorUserId);
 		MediaItem item = findAccessibleMedia(actorUserId, attachmentId);
+		if (!fileStorageService.isAvailable()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Media storage is temporarily unavailable");
+		}
 		if (!fileStorageService.exists(item.storageKey())) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "Media file not found");
 		}
@@ -152,6 +163,25 @@ public class MediaGalleryService {
 					item.fileSize());
 		} catch (IOException exception) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "Media file not found");
+		}
+	}
+
+	public AttachmentDownloadUrlResponse downloadUrl(UUID actorUserId, UUID attachmentId) {
+		findActiveUser(actorUserId);
+		MediaItem item = findAccessibleMedia(actorUserId, attachmentId);
+		if (!fileStorageService.isAvailable()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Media storage is temporarily unavailable");
+		}
+		if (!fileStorageService.exists(item.storageKey())) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "Media file not found");
+		}
+		try {
+			return new AttachmentDownloadUrlResponse(
+					fileStorageService.signedUrl(item.storageKey(), storageProperties.downloadUrlTtl()),
+					Instant.now().plus(storageProperties.downloadUrlTtl()));
+		} catch (IOException exception) {
+			LOGGER.warn("Media download URL generation failed exceptionClass={}", exception.getClass().getName());
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Media download is temporarily unavailable");
 		}
 	}
 

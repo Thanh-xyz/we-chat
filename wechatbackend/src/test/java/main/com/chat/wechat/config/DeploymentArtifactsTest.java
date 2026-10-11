@@ -34,14 +34,14 @@ class DeploymentArtifactsTest {
 		String compose = read("docker/docker-compose.yml");
 		String postgresService = compose.substring(
 				compose.indexOf("  postgres:"),
-				compose.indexOf("  backend:"));
+				compose.indexOf("  redis:"));
 
 		assertThat(compose).contains(
 				"image: postgres:17.11-alpine3.24",
 				"condition: service_healthy",
 				"/actuator/health/readiness",
 				"postgres_data:/var/lib/postgresql/data",
-				"uploads_data:/app/uploads",
+				"minio_data:/data",
 				"internal: true",
 				"read_only: true",
 				"no-new-privileges:true");
@@ -57,8 +57,12 @@ class DeploymentArtifactsTest {
 				"${REDIS_PASSWORD:?",
 				"RATE_LIMIT_DISTRIBUTED_ENABLED",
 				"RATE_LIMIT_AUTH_LOGIN_CAPACITY",
+				"image: minio/minio:RELEASE.2025-10-15T17-29-55Z",
+				"minio-init:",
+				"STORAGE_BUCKET",
+				"STORAGE_PRESIGNED_ENDPOINT",
 				"condition: service_healthy");
-		assertThat(compose).doesNotContain("minio:", "rabbitmq:");
+		assertThat(compose).doesNotContain("uploads_data:/app/uploads", "rabbitmq:");
 	}
 
 	@Test
@@ -110,7 +114,7 @@ class DeploymentArtifactsTest {
 				"Compose/prod uses the R6 Redis-backed shared limiter",
 				"Raw JWT is never used as rate-limit identity or key",
 				"There is no durable outbox",
-				"Local upload storage is single-instance",
+				"Attachment/media bytes use private MinIO/S3-compatible storage",
 				"Local/test rate limiting is node-local",
 				"CI/CD is not implemented");
 	}

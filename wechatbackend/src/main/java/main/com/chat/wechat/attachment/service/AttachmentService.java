@@ -1,11 +1,15 @@
 package main.com.chat.wechat.attachment.service;
 
 import main.com.chat.wechat.attachment.dto.AttachmentDownloadResponse;
+import main.com.chat.wechat.attachment.dto.AttachmentDownloadUrlResponse;
 import main.com.chat.wechat.attachment.dto.AttachmentResponse;
 import main.com.chat.wechat.attachment.dto.AttachmentUploadResponse;
 import main.com.chat.wechat.attachment.dto.PresignedUploadRequest;
 import main.com.chat.wechat.attachment.dto.PresignedUploadResponse;
 import main.com.chat.wechat.attachment.storage.FileStorageService;
+import main.com.chat.wechat.attachment.storage.FileStorageService.PresignedObjectRequest;
+import main.com.chat.wechat.attachment.storage.FileStorageService.StoredObject;
+import main.com.chat.wechat.attachment.storage.StorageProperties;
 import main.com.chat.wechat.attachment.storage.StoredFile;
 import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.audit.service.AuditLogService;
@@ -23,6 +27,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -40,9 +46,13 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class AttachmentService {
+	private static final Logger LOGGER = LoggerFactory.getLogger(AttachmentService.class);
 	private static final DateTimeFormatter STORAGE_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy/MM/dd").withZone(ZoneOffset.UTC);
 	private static final Set<String> CLIENT_FILE_TYPES = Set.of("IMAGE", "FILE", "VOICE");
 
@@ -54,6 +64,8 @@ public class AttachmentService {
 	private final AuditLogService auditLogService;
 	private final AuditJsonWriter auditJsonWriter;
 	private final RealtimeEventPublisher realtimeEventPublisher;
+	private final MeterRegistry meterRegistry;
+	private final StorageProperties storageProperties;
 
 	public AttachmentService(
 			ConversationService conversationService,
@@ -63,7 +75,9 @@ public class AttachmentService {
 			AttachmentProperties attachmentProperties,
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
-			RealtimeEventPublisher realtimeEventPublisher) {
+			RealtimeEventPublisher realtimeEventPublisher,
+			MeterRegistry meterRegistry,
+			StorageProperties storageProperties) {
 		this.conversationService = conversationService;
 		this.messageAttachmentRepository = messageAttachmentRepository;
 		this.userRepository = userRepository;
@@ -72,6 +86,8 @@ public class AttachmentService {
 		this.auditLogService = auditLogService;
 		this.auditJsonWriter = auditJsonWriter;
 		this.realtimeEventPublisher = realtimeEventPublisher;
+		this.meterRegistry = meterRegistry;
+		this.storageProperties = storageProperties;
 	}
 
 	@Transactional
@@ -104,7 +120,8 @@ public class AttachmentService {
 				"CLEAN",
 				null,
 				now,
-				now);
+				now,
+				"READY");
 		try {
 			messageAttachmentRepository.save(attachment);
 			if (validatedFile.dimensions() != null) {
@@ -155,6 +172,9 @@ public class AttachmentService {
 	public AttachmentDownloadResponse download(UUID actorUserId, UUID attachmentId) {
 		findActiveUser(actorUserId);
 		MessageAttachment attachment = findAccessibleAttachment(actorUserId, attachmentId);
+		if (!fileStorageService.isAvailable()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment storage is temporarily unavailable");
+		}
 		if (!fileStorageService.exists(attachment.storageKey())) {
 			throw new ApiException(HttpStatus.NOT_FOUND, "Attachment file not found");
 		}
@@ -176,11 +196,30 @@ public class AttachmentService {
 					attachment.mimeType(),
 					attachment.fileSize());
 		} catch (IOException exception) {
+			storageFailure("download", exception);
 			throw new ApiException(HttpStatus.NOT_FOUND, "Attachment file not found");
 		}
 	}
 
-	@Transactional
+	public AttachmentDownloadUrlResponse createDownloadUrl(UUID actorUserId, UUID attachmentId) {
+		findActiveUser(actorUserId);
+		MessageAttachment attachment = findAccessibleAttachment(actorUserId, attachmentId);
+		if (!fileStorageService.isAvailable()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment storage is temporarily unavailable");
+		}
+		if (!fileStorageService.exists(attachment.storageKey())) {
+			throw new ApiException(HttpStatus.NOT_FOUND, "Attachment file not found");
+		}
+		try {
+			String url = fileStorageService.signedUrl(attachment.storageKey(), storageProperties.downloadUrlTtl());
+			counter("storage_download_url", "success", attachment.fileType()).increment();
+			return new AttachmentDownloadUrlResponse(url, Instant.now().plus(storageProperties.downloadUrlTtl()));
+		} catch (IOException exception) {
+			storageFailure("presign_download", exception);
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment download is temporarily unavailable");
+		}
+	}
+
 	public void delete(UUID actorUserId, UUID attachmentId) {
 		findActiveUser(actorUserId);
 		MessageAttachment attachment = findAccessibleAttachment(actorUserId, attachmentId);
@@ -196,7 +235,14 @@ public class AttachmentService {
 		}
 		Instant deletedAt = Instant.now();
 		messageAttachmentRepository.softDelete(attachment.id(), deletedAt);
-		deleteStoredFileQuietly(attachment.storageKey());
+		try {
+			fileStorageService.delete(attachment.storageKey());
+			messageAttachmentRepository.markStorageDeleted(attachment.id(), Instant.now());
+			counter("storage_delete", "success", attachment.fileType()).increment();
+		} catch (IOException exception) {
+			storageFailure("delete", exception);
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment deletion is temporarily unavailable");
+		}
 		auditLogService.log(
 				"ATTACHMENT_DELETE",
 				"ATTACHMENT",
@@ -216,13 +262,92 @@ public class AttachmentService {
 
 	public PresignedUploadResponse createPresignedUpload(UUID actorUserId, PresignedUploadRequest request) {
 		findActiveUser(actorUserId);
-		conversationService.findAccessibleConversation(actorUserId, request.conversationId());
-		throw new ApiException(HttpStatus.BAD_REQUEST, "Presigned upload is not supported for local storage");
+		Conversation conversation = conversationService.findAccessibleConversation(actorUserId, request.conversationId());
+		String originalFileName = safeOriginalFileName(request.originalFileName());
+		String extension = extension(originalFileName);
+		String fileType = resolveFileType(request.fileType(), extension);
+		long fileSize = request.fileSize();
+		validateDeclaredMetadata(fileSize, extension, fileType, request.mimeType());
+		if (!fileStorageService.isAvailable()) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment upload is temporarily unavailable");
+		}
+		UUID attachmentId = UUID.randomUUID();
+		Instant now = Instant.now();
+		String storageKey = quarantineStorageKey(attachmentId, now);
+		MessageAttachment attachment = new MessageAttachment(
+				attachmentId,
+				null,
+				actorUserId,
+				conversation.id(),
+				originalFileName,
+				storageKey,
+				"/api/attachments/" + attachmentId + "/download",
+				normalizeMimeType(request.mimeType()),
+				fileType,
+				fileSize,
+				null,
+				"PENDING",
+				null,
+				now,
+				now,
+				"INIT");
+		messageAttachmentRepository.save(attachment);
+		try {
+			PresignedObjectRequest presigned = fileStorageService.presignedUpload(
+					storageKey,
+					attachment.mimeType(),
+					fileSize,
+					storageProperties.uploadUrlTtl());
+			counter("storage_upload", "authorized", fileType).increment();
+			return new PresignedUploadResponse(
+					attachmentId,
+					presigned.url(),
+					presigned.headers(),
+					presigned.expiresAt());
+		} catch (IOException exception) {
+			messageAttachmentRepository.markStorageFailed(attachmentId, Instant.now());
+			storageFailure("presign_upload", exception);
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment upload is temporarily unavailable");
+		}
 	}
 
 	public AttachmentResponse completePresignedUpload(UUID actorUserId, main.com.chat.wechat.attachment.dto.AttachmentMetadataRequest request) {
 		findActiveUser(actorUserId);
-		throw new ApiException(HttpStatus.BAD_REQUEST, "Presigned upload is not supported for local storage");
+		MessageAttachment pending = messageAttachmentRepository.findPendingUpload(request.attachmentId(), actorUserId)
+				.orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Pending attachment not found"));
+		StoredObject stored;
+		try {
+			stored = fileStorageService.head(pending.storageKey());
+		} catch (IOException exception) {
+			storageFailure("head", exception);
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "Attachment upload is temporarily unavailable");
+		}
+		try {
+			if (stored.size() <= 0 || stored.size() > attachmentProperties.maxSizeFor(pending.fileType())) {
+				throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "Attachment is larger than allowed for " + pending.fileType());
+			}
+			if (stored.size() != pending.fileSize()) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "Uploaded object size does not match the upload request");
+			}
+			ValidatedFile validated = validateStoredObject(pending, stored);
+			if (StringUtils.hasText(request.checksum()) && !validated.checksum().equalsIgnoreCase(request.checksum().trim())) {
+				throw new ApiException(HttpStatus.BAD_REQUEST, "Uploaded object checksum does not match");
+			}
+			Instant now = Instant.now();
+			messageAttachmentRepository.finalizeReady(
+					pending.id(),
+					validated.checksum(),
+					validated.dimensions() == null ? null : validated.dimensions().width(),
+					validated.dimensions() == null ? null : validated.dimensions().height(),
+					now);
+			counter("storage_upload", "ready", pending.fileType()).increment();
+			return AttachmentResponse.from(messageAttachmentRepository.findById(pending.id()).orElseThrow());
+		} catch (ApiException exception) {
+			messageAttachmentRepository.markStorageFailed(pending.id(), Instant.now());
+			deleteStoredFileQuietly(pending.storageKey());
+			counter("storage_validation", "rejected", pending.fileType()).increment();
+			throw exception;
+		}
 	}
 
 	private MessageAttachment findAccessibleAttachment(UUID actorUserId, UUID attachmentId) {
@@ -243,20 +368,70 @@ public class AttachmentService {
 		String originalFileName = safeOriginalFileName(file.getOriginalFilename());
 		String extension = extension(originalFileName);
 		String fileType = resolveFileType(requestedFileType, extension);
-		long maxSize = attachmentProperties.maxSizeFor(fileType);
-		if (file.getSize() > maxSize) {
+		String declaredMimeType = normalizeMimeType(file.getContentType());
+		validateDeclaredMetadata(file.getSize(), extension, fileType, declaredMimeType);
+		ValidatedContent content = validateContent(
+				originalFileName,
+				extension,
+				fileType,
+				declaredMimeType,
+				file.getSize(),
+				() -> file.getInputStream(),
+				HttpStatus.BAD_REQUEST);
+		String mimeType = content.mimeType();
+		String checksum = content.checksum();
+		ImageDimensions dimensions = content.dimensions();
+		return new ValidatedFile(originalFileName, extension, mimeType, fileType, checksum, dimensions);
+	}
+
+	private ValidatedFile validateStoredObject(MessageAttachment attachment, StoredObject stored) {
+		String extension = extension(attachment.originalFileName());
+		ValidatedContent content = validateContent(
+				attachment.originalFileName(),
+				extension,
+				attachment.fileType(),
+				attachment.mimeType(),
+				stored.size(),
+				() -> fileStorageService.openStream(attachment.storageKey()),
+				HttpStatus.SERVICE_UNAVAILABLE);
+		return new ValidatedFile(
+				attachment.originalFileName(),
+				extension,
+				content.mimeType(),
+				attachment.fileType(),
+				content.checksum(),
+				content.dimensions());
+	}
+
+	private ValidatedContent validateContent(
+			String originalFileName,
+			String extension,
+			String fileType,
+			String declaredMimeType,
+			long fileSize,
+			ContentSource source,
+			HttpStatus readFailureStatus) {
+		validateDeclaredMetadata(fileSize, extension, fileType, declaredMimeType);
+		String magicMimeType = magicMimeType(source, readFailureStatus);
+		String mimeType = resolveMimeType(declaredMimeType, extension, fileType, magicMimeType);
+		String checksum = checksum(source, readFailureStatus);
+		ImageDimensions dimensions = imageDimensions(source, fileType, readFailureStatus);
+		return new ValidatedContent(mimeType, checksum, dimensions);
+	}
+
+	private void validateDeclaredMetadata(long fileSize, String extension, String fileType, String mimeType) {
+		if (fileSize <= 0) {
+			throw new ApiException(HttpStatus.BAD_REQUEST, "File is required");
+		}
+		if (fileSize > attachmentProperties.maxSizeFor(fileType)) {
 			throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "Attachment is larger than allowed for " + fileType);
 		}
 		if (!attachmentProperties.allowedExtensionsFor(fileType).contains(extension)) {
 			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported file extension for " + fileType);
 		}
-		String mimeType = resolveMimeType(file, extension, fileType);
-		if (!attachmentProperties.allowedMimeTypesFor(fileType).contains(mimeType)) {
+		if (!StringUtils.hasText(mimeType) || !attachmentProperties.allowedMimeTypesFor(fileType).contains(mimeType)) {
 			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported MIME type for " + fileType);
 		}
-		String checksum = checksum(file);
-		ImageDimensions dimensions = imageDimensions(file, fileType);
-		return new ValidatedFile(originalFileName, extension, mimeType, fileType, checksum, dimensions);
 	}
 
 	private String safeOriginalFileName(String submittedFileName) {
@@ -302,15 +477,16 @@ public class AttachmentService {
 		throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Unsupported file extension");
 	}
 
-	private String resolveMimeType(MultipartFile file, String extension, String fileType) {
-		String clientMimeType = normalizeMimeType(file.getContentType());
+	private String resolveMimeType(String clientMimeType, String extension, String fileType, String magicMimeType) {
 		String extensionMimeType = mimeTypeFromExtension(extension);
-		String magicMimeType = magicMimeType(file);
 		if ("IMAGE".equals(fileType) && (magicMimeType == null || !magicMimeType.startsWith("image/"))) {
 			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Invalid image content");
 		}
 		if ("application/zip".equals(magicMimeType) && extensionMimeType != null) {
 			return extensionMimeType;
+		}
+		if (("pdf".equals(extension) || Set.of("docx", "xlsx", "pptx").contains(extension)) && magicMimeType == null) {
+			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "File content does not match its extension");
 		}
 		if (magicMimeType != null && attachmentProperties.allowedMimeTypesFor(fileType).contains(magicMimeType)) {
 			return magicMimeType;
@@ -331,12 +507,12 @@ public class AttachmentService {
 		return mimeType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
 	}
 
-	private String magicMimeType(MultipartFile file) {
+	private String magicMimeType(ContentSource source, HttpStatus readFailureStatus) {
 		byte[] header;
-		try (InputStream inputStream = file.getInputStream()) {
+		try (InputStream inputStream = source.open()) {
 			header = inputStream.readNBytes(16);
 		} catch (IOException exception) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "Could not read file content");
+			throw new ApiException(readFailureStatus, "Could not read file content");
 		}
 		if (header.length >= 4
 				&& header[0] == (byte) 0x89
@@ -400,32 +576,32 @@ public class AttachmentService {
 		};
 	}
 
-	private String checksum(MultipartFile file) {
+	private String checksum(ContentSource source, HttpStatus readFailureStatus) {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
-			try (DigestInputStream inputStream = new DigestInputStream(file.getInputStream(), digest)) {
+			try (DigestInputStream inputStream = new DigestInputStream(source.open(), digest)) {
 				inputStream.transferTo(OutputStream.nullOutputStream());
 			}
 			return HexFormat.of().formatHex(digest.digest());
 		} catch (IOException exception) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "Could not read file content");
+			throw new ApiException(readFailureStatus, "Could not read file content");
 		} catch (NoSuchAlgorithmException exception) {
 			throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Checksum algorithm is unavailable");
 		}
 	}
 
-	private ImageDimensions imageDimensions(MultipartFile file, String fileType) {
+	private ImageDimensions imageDimensions(ContentSource source, String fileType, HttpStatus readFailureStatus) {
 		if (!"IMAGE".equals(fileType)) {
 			return null;
 		}
-		try (InputStream inputStream = file.getInputStream()) {
+		try (InputStream inputStream = source.open()) {
 			BufferedImage image = ImageIO.read(inputStream);
 			if (image == null) {
 				throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Invalid image content");
 			}
 			return new ImageDimensions(image.getWidth(), image.getHeight());
 		} catch (IOException exception) {
-			throw new ApiException(HttpStatus.BAD_REQUEST, "Could not read image metadata");
+			throw new ApiException(readFailureStatus, "Could not read image metadata");
 		}
 	}
 
@@ -437,11 +613,35 @@ public class AttachmentService {
 				extension);
 	}
 
+	private String quarantineStorageKey(UUID attachmentId, Instant now) {
+		return "attachments/quarantine/%s/%s".formatted(STORAGE_DATE_FORMAT.format(now), attachmentId);
+	}
+
 	private void deleteStoredFileQuietly(String storageKey) {
 		try {
 			fileStorageService.delete(storageKey);
-		} catch (IOException ignored) {
+		} catch (IOException exception) {
+			storageFailure("delete_cleanup", exception);
 		}
+	}
+
+	private void storageFailure(String operation, Exception exception) {
+		counter("storage_operation", "failure", operation).increment();
+		LOGGER.warn("Object storage operation failed operation={} exceptionClass={}", operation, exception.getClass().getName());
+	}
+
+	private Counter counter(String operation, String result, String mediaType) {
+		return Counter.builder("storage_operations_total")
+				.description("Attachment object-storage operations")
+				.tag("operation", operation)
+				.tag("result", result)
+				.tag("mediaType", mediaType == null ? "unknown" : mediaType)
+				.register(meterRegistry);
+	}
+
+	@FunctionalInterface
+	private interface ContentSource {
+		InputStream open() throws IOException;
 	}
 
 	private record ValidatedFile(
@@ -451,6 +651,9 @@ public class AttachmentService {
 			String fileType,
 			String checksum,
 			ImageDimensions dimensions) {
+	}
+
+	private record ValidatedContent(String mimeType, String checksum, ImageDimensions dimensions) {
 	}
 
 	private record ImageDimensions(Integer width, Integer height) {

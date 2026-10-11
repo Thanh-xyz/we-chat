@@ -152,6 +152,7 @@ Send a STOMP `CONNECT` frame containing `authorization:Bearer <access-token>`. T
 docker compose --env-file .env -f docker/docker-compose.yml logs -f backend
 docker compose --env-file .env -f docker/docker-compose.yml logs -f gateway frontend
 docker compose --env-file .env -f docker/docker-compose.yml logs -f postgres redis
+docker compose --env-file .env -f docker/docker-compose.yml logs -f minio minio-init
 ```
 
 The Nginx access format logs `$uri` without query parameters so reset or verification tokens in browser URLs are not written to access logs.
@@ -172,7 +173,7 @@ If the edge subnet or Nginx address changes, update both Compose networking and 
 ## Persistent data
 
 - `postgres_data` contains PostgreSQL data.
-- `uploads_data` is mounted at `/app/uploads` for the current local filesystem storage implementation.
+- `minio_data` contains the private MinIO object store used for attachment/media binaries.
 - Redis Pub/Sub intentionally has no data volume: it is a transient realtime transport, not a durable event log.
 
 Back up these volumes before upgrades. `docker compose --env-file .env -f docker/docker-compose.yml down` preserves them; the `-v` variant deletes them and should only be used when intentionally discarding data.
@@ -198,9 +199,9 @@ docker compose --env-file .env -f docker/docker-compose.yml down
 This is a deployment foundation, not a claim that the system is fully production-ready:
 
 - The Spring simple WebSocket broker remains process-local for socket sessions; Redis distributes outbound events between JVMs. Pub/Sub is best-effort: an event published while Redis is unavailable, or while a subscriber is disconnected, is not replayed. There is no durable outbox, ordering guarantee across event types, or cross-region bridge.
-- Local upload storage is single-instance; multi-instance deployment requires MinIO/S3 work from R16.
+- Attachment/media bytes use private MinIO/S3-compatible storage; see `docs/architecture/storage.md`. The local filesystem implementation remains only for explicit unit-test/local fallback and is rejected by the production guard.
 - Local/test rate limiting is node-local by design; Compose/prod uses the R6 Redis-backed shared limiter.
-- Redis-backed authentication sessions, caches, queues, and storage are not implemented; R11 and R16 remain future work.
+- Redis-backed authentication sessions and caches are not implemented; R11 remains future work. Redis is never used for binary storage.
 - The frontend is independently built and deployed from `wechatfrontend`; Playwright runtime tests still require real credentials and a running stack.
 - Production TLS, real domains, certificate management, and edge access controls are not configured.
 - Prometheus server, alerting, Grafana, and distributed tracing are not deployed.

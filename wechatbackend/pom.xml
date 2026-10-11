@@ -91,6 +91,19 @@
 			<version>8.14.0</version>
 		</dependency>
 
+		<!-- S3-compatible object storage client; kept behind FileStorageService. -->
+		<dependency>
+			<groupId>io.minio</groupId>
+			<artifactId>minio</artifactId>
+			<version>9.0.3</version>
+		</dependency>
+		<!-- MinIO 9 uses the JVM artifact for OkHttp runtime classes. -->
+		<dependency>
+			<groupId>com.squareup.okhttp3</groupId>
+			<artifactId>okhttp-jvm</artifactId>
+			<version>5.3.2</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
@@ -185,6 +198,31 @@
 							<failIfNoTests>true</failIfNoTests>
 							<includes>
 								<include>**/*Redis*IT.java</include>
+							</includes>
+						</configuration>
+						<executions>
+							<execution>
+								<goals>
+									<goal>integration-test</goal>
+									<goal>verify</goal>
+								</goals>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+		<profile>
+			<id>minio-integration</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-failsafe-plugin</artifactId>
+						<configuration>
+							<failIfNoTests>true</failIfNoTests>
+							<includes>
+								<include>**/*Minio*IT.java</include>
 							</includes>
 						</configuration>
 						<executions>

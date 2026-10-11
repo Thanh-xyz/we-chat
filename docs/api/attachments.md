@@ -1,19 +1,26 @@
 # Attachment API
 
-Production flow uses upload-before-send:
+Production flow uses upload-before-send. Docker/prod uses private S3-compatible object storage:
 
-1. Client uploads a real file to `POST /api/attachments/upload`.
-2. Server validates membership, size, extension and MIME type, stores the file, and returns `attachmentId`.
-3. Client sends a message with `attachmentIds`.
-4. Backend checks every attachment is pending, uploaded by the current user, belongs to the same conversation, then attaches it to the message.
+1. Client requests `POST /api/attachments/presigned-upload`.
+2. Server validates membership, size, extension and declared MIME type, generates the object key and returns a short-lived PUT URL.
+3. Client uploads directly to MinIO/S3, then calls `POST /api/attachments/complete`.
+4. Server reads the object, verifies size, magic bytes, checksum and image decoding where applicable, then marks it `READY`.
+5. Client sends a message with `attachmentIds`.
+6. Backend checks every attachment is READY, owned by the current user, belongs to the same conversation, then attaches it to the message.
 
-This is preferred over sending attachment metadata directly in `CreateMessageRequest` because the server owns storage keys, checksum, MIME validation and access control before the message becomes visible. The legacy `attachments` metadata field is still accepted for backward compatibility, but new clients should use `attachmentIds`.
+The legacy `POST /api/attachments/upload` multipart endpoint remains available for compatibility and uses the same server-side validation. The legacy `attachments` metadata field is still accepted for backward compatibility, but new clients should use `attachmentIds`.
 
 ## Configuration
 
 ```properties
-app.storage.type=local
+app.storage.type=minio
 app.storage.local-root=uploads
+app.storage.endpoint=http://minio:9000
+app.storage.presigned-endpoint=http://localhost:9000
+app.storage.bucket=attachments
+app.storage.upload-url-ttl=PT10M
+app.storage.download-url-ttl=PT5M
 app.attachment.image-max-size=10MB
 app.attachment.file-max-size=50MB
 app.attachment.voice-max-size=25MB
@@ -90,15 +97,19 @@ Returns attachment metadata only if the current user is still an active member o
 
 ### Download Attachment
 
+`GET {{baseUrl}}/api/attachments/{{attachmentId}}/download-url`
+
+Returns a short-lived presigned GET URL only after membership authorization. The frontend uses it immediately and does not persist it.
+
 `GET {{baseUrl}}/api/attachments/{{attachmentId}}/download`
 
-Returns the file stream with `Content-Disposition: attachment`. A recalled/deleted attachment returns `404`.
+Legacy authenticated streaming fallback. A recalled/deleted/non-READY attachment returns `404`.
 
 ### Delete Attachment
 
 `DELETE {{baseUrl}}/api/attachments/{{attachmentId}}`
 
-Only the uploader can delete. The metadata is soft-deleted, the local file is removed, and members receive realtime event `attachment.deleted`.
+Only the uploader can delete. The metadata becomes inaccessible, the private object is removed or queued for bounded cleanup, and members receive realtime event `attachment.deleted`.
 
 ### Access Denied Test
 
