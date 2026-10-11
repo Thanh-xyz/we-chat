@@ -9,12 +9,11 @@ function AttachmentCard({ attachment }) {
   const [url, setUrl] = useState('')
   const fileType = attachment.fileType || 'FILE'
   const fileName = attachment.originalFileName || attachment.fileName || 'attachment'
-  const source = attachment.fileUrl || `/api/attachments/${attachment.id}/download`
 
   useEffect(() => {
     let active = true
     let objectUrl = ''
-    attachmentApi.download(source).then(({ data }) => {
+    attachmentApi.downloadById(attachment.id).then(({ data }) => {
       if (!active) return
       objectUrl = URL.createObjectURL(data)
       setUrl(objectUrl)
@@ -23,11 +22,11 @@ function AttachmentCard({ attachment }) {
       active = false
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [source])
+  }, [attachment.id])
 
   async function download() {
     try {
-      const { data } = await attachmentApi.download(source)
+      const { data } = await attachmentApi.downloadById(attachment.id)
       const objectUrl = URL.createObjectURL(data)
       const link = document.createElement('a')
       link.href = objectUrl

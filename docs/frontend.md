@@ -135,7 +135,7 @@ Reconnect delay grows from 1 to 30 seconds and stops automatically after six ret
 - `ConversationResponse` does not include the latest message text. The list shows a generic server-backed state until that conversation's messages have been loaded; it does not issue an N+1 request per conversation.
 - Direct conversations expose member IDs but no member profile summary, so unnamed direct chats use the neutral label “Trò chuyện trực tiếp”.
 - `message.created` does not contain a full message DTO and there is no single-message GET endpoint, requiring newest-page resynchronization.
-- Attachments support client-side MIME/size validation, queued/uploading/success/failed/cancelled states, upload-before-send, image preview, audio playback, and authenticated file downloads using the backend attachment contract.
+- Attachments support client-side MIME/size preflight, queued/uploading/success/failed/cancelled states, direct presigned PUT upload followed by server finalization, image preview, audio playback, and short-lived authorized presigned downloads. Client checks are UX only; backend magic-byte/ImageIO/checksum validation remains authoritative.
 - Contacts use the backend friend request, friend list, block/unblock, and user search endpoints with debounced search.
 - The notification center loads real notifications, unread counts, mark-read/read-all, deletion, and realtime user notification events.
 - Drafts are retained in memory per conversation; no credentials are persisted with drafts.

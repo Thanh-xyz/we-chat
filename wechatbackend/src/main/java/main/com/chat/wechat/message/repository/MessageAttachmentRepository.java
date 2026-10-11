@@ -32,9 +32,9 @@ public class MessageAttachmentRepository {
 				insert into message_attachments (
 				    id, message_id, uploader_id, conversation_id, original_file_name, storage_key,
 				    file_url, file_name, mime_type, file_type, file_category, file_size, checksum, scan_status,
-				    deleted_at, created_at, updated_at
+				    deleted_at, created_at, updated_at, storage_status
 				)
-				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 				attachment.id(),
 				attachment.messageId(),
@@ -52,7 +52,8 @@ public class MessageAttachmentRepository {
 				attachment.scanStatus(),
 				toTimestamp(attachment.deletedAt()),
 				Timestamp.from(attachment.createdAt()),
-				Timestamp.from(attachment.updatedAt()));
+				Timestamp.from(attachment.updatedAt()),
+				attachment.storageStatus());
 		return attachment;
 	}
 
@@ -80,6 +81,7 @@ public class MessageAttachmentRepository {
 					 and cm.left_at is null
 					where ma.id = ?
 					  and ma.deleted_at is null
+					  and ma.storage_status = 'READY'
 					""", rowMapper(), userId, id);
 			return Optional.ofNullable(attachment);
 		} catch (EmptyResultDataAccessException exception) {
@@ -91,7 +93,7 @@ public class MessageAttachmentRepository {
 		return jdbcTemplate.query("""
 				select *
 				from message_attachments
-				where message_id = ? and deleted_at is null
+				where message_id = ? and deleted_at is null and storage_status = 'READY'
 				order by created_at, id
 				""", rowMapper(), messageId);
 	}
@@ -107,7 +109,7 @@ public class MessageAttachmentRepository {
 		jdbcTemplate.query("""
 				select *
 				from message_attachments
-				where message_id in (%s) and deleted_at is null
+				where message_id in (%s) and deleted_at is null and storage_status = 'READY'
 				order by message_id, created_at, id
 				""".formatted(placeholders(messageIds.size())),
 				(RowCallbackHandler) rs -> {
@@ -133,6 +135,7 @@ public class MessageAttachmentRepository {
 				  and conversation_id = ?
 				  and message_id is null
 				  and deleted_at is null
+				  and storage_status = 'READY'
 				order by created_at, id
 				""".formatted(placeholders(attachmentIds.size())),
 				rowMapper(),
@@ -143,9 +146,69 @@ public class MessageAttachmentRepository {
 		jdbcTemplate.update("""
 				update message_attachments
 				set message_id = ?, updated_at = ?
-				where id = ? and deleted_at is null
+				where id = ? and deleted_at is null and storage_status = 'READY'
 				""", messageId, Timestamp.from(updatedAt), attachmentId);
 		return findById(attachmentId).orElseThrow();
+	}
+
+	public Optional<MessageAttachment> findPendingUpload(UUID attachmentId, UUID uploaderId) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject("""
+					select *
+					from message_attachments
+					where id = ?
+					  and uploader_id = ?
+					  and message_id is null
+					  and deleted_at is null
+					  and storage_status = 'INIT'
+					""", rowMapper(), attachmentId, uploaderId));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public void markReady(UUID attachmentId, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set storage_status = 'READY', scan_status = 'CLEAN', updated_at = ?
+				where id = ? and storage_status = 'INIT' and deleted_at is null
+				""", Timestamp.from(updatedAt), attachmentId);
+	}
+
+	public void finalizeReady(UUID attachmentId, String checksum, Integer width, Integer height, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set storage_status = 'READY', scan_status = 'CLEAN', checksum = ?,
+				    width = coalesce(?, width), height = coalesce(?, height), updated_at = ?
+				where id = ? and storage_status = 'INIT' and deleted_at is null
+				""", checksum, width, height, Timestamp.from(updatedAt), attachmentId);
+	}
+
+	public void markStorageFailed(UUID attachmentId, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set storage_status = 'FAILED', scan_status = 'FAILED', updated_at = ?
+				where id = ? and storage_status = 'INIT' and deleted_at is null
+				""", Timestamp.from(updatedAt), attachmentId);
+	}
+
+	public void markStorageDeleted(UUID attachmentId, Instant updatedAt) {
+		jdbcTemplate.update("""
+				update message_attachments
+				set storage_status = 'DELETED', updated_at = ?
+				where id = ? and storage_status in ('FAILED', 'DELETE_PENDING')
+				""", Timestamp.from(updatedAt), attachmentId);
+	}
+
+	public List<MessageAttachment> findUnfinalizedBefore(Instant cutoff, int batchSize) {
+		return jdbcTemplate.query("""
+				select *
+				from message_attachments
+				where storage_status in ('INIT', 'FAILED', 'DELETE_PENDING')
+				  and created_at < ?
+				order by created_at, id
+				limit ?
+				""", rowMapper(), Timestamp.from(cutoff), batchSize);
 	}
 
 	public void updateMediaMetadata(UUID attachmentId, Integer width, Integer height, Integer durationSeconds, Instant updatedAt) {
@@ -162,7 +225,7 @@ public class MessageAttachmentRepository {
 	public void softDelete(UUID attachmentId, Instant deletedAt) {
 		jdbcTemplate.update("""
 				update message_attachments
-				set deleted_at = ?, updated_at = ?
+				set deleted_at = ?, storage_status = case when storage_status = 'READY' then 'DELETE_PENDING' else storage_status end, updated_at = ?
 				where id = ? and deleted_at is null
 				""", Timestamp.from(deletedAt), Timestamp.from(deletedAt), attachmentId);
 	}
@@ -170,7 +233,7 @@ public class MessageAttachmentRepository {
 	public void softDeleteByMessageId(UUID messageId, Instant deletedAt) {
 		jdbcTemplate.update("""
 				update message_attachments
-				set deleted_at = ?, updated_at = ?
+				set deleted_at = ?, storage_status = case when storage_status = 'READY' then 'DELETE_PENDING' else storage_status end, updated_at = ?
 				where message_id = ? and deleted_at is null
 				""", Timestamp.from(deletedAt), Timestamp.from(deletedAt), messageId);
 	}
@@ -202,9 +265,10 @@ public class MessageAttachmentRepository {
 				readLong(rs, "file_size"),
 				rs.getString("checksum"),
 				rs.getString("scan_status"),
-				toInstant(rs, "deleted_at"),
-				toInstant(rs, "created_at"),
-				toInstant(rs, "updated_at"));
+					toInstant(rs, "deleted_at"),
+					toInstant(rs, "created_at"),
+					toInstant(rs, "updated_at"),
+					rs.getString("storage_status"));
 	}
 
 	private Long readLong(ResultSet rs, String column) throws SQLException {

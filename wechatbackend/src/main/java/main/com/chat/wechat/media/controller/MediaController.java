@@ -1,6 +1,7 @@
 package main.com.chat.wechat.media.controller;
 
 import main.com.chat.wechat.attachment.dto.AttachmentDownloadResponse;
+import main.com.chat.wechat.attachment.dto.AttachmentDownloadUrlResponse;
 import main.com.chat.wechat.common.security.AuthenticatedUser;
 import main.com.chat.wechat.media.dto.AttachmentPreviewResponse;
 import main.com.chat.wechat.media.dto.MediaDetailResponse;
@@ -137,6 +138,14 @@ public class MediaController {
 			builder.contentLength(response.fileSize());
 		}
 		return builder.body(response.resource());
+	}
+
+	@GetMapping("/media/{attachmentId}/download-url")
+	@PreAuthorize("hasAuthority('MESSAGE_READ')")
+	public AttachmentDownloadUrlResponse downloadUrl(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID attachmentId) {
+		return mediaGalleryService.downloadUrl(user.id(), attachmentId);
 	}
 
 	@DeleteMapping("/media/{attachmentId}")

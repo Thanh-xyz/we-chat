@@ -2,6 +2,7 @@ package main.com.chat.wechat.attachment.controller;
 
 import jakarta.validation.Valid;
 import main.com.chat.wechat.attachment.dto.AttachmentDownloadResponse;
+import main.com.chat.wechat.attachment.dto.AttachmentDownloadUrlResponse;
 import main.com.chat.wechat.attachment.dto.AttachmentMetadataRequest;
 import main.com.chat.wechat.attachment.dto.AttachmentResponse;
 import main.com.chat.wechat.attachment.dto.AttachmentUploadResponse;
@@ -75,6 +76,14 @@ public class AttachmentController {
 			builder.contentLength(response.fileSize());
 		}
 		return builder.body(response.resource());
+	}
+
+	@GetMapping("/{attachmentId}/download-url")
+	@PreAuthorize("hasAuthority('MESSAGE_READ')")
+	public AttachmentDownloadUrlResponse downloadUrl(
+			@AuthenticationPrincipal AuthenticatedUser user,
+			@PathVariable UUID attachmentId) {
+		return attachmentService.createDownloadUrl(user.id(), attachmentId);
 	}
 
 	@DeleteMapping("/{attachmentId}")

@@ -32,12 +32,35 @@ public class LocalFileStorageService implements FileStorageService {
 	}
 
 	@Override
+	public PresignedObjectRequest presignedUpload(String storageKey, String contentType, long contentLength, Duration ttl) throws IOException {
+		throw new IOException("Presigned upload is unavailable for local storage");
+	}
+
+	@Override
 	public Resource download(String storageKey) throws IOException {
 		Path path = resolve(storageKey);
 		if (!Files.exists(path) || !Files.isRegularFile(path)) {
 			throw new IOException("Stored file not found");
 		}
 		return new FileSystemResource(path);
+	}
+
+	@Override
+	public InputStream openStream(String storageKey) throws IOException {
+		Path path = resolve(storageKey);
+		if (!Files.exists(path) || !Files.isRegularFile(path)) {
+			throw new IOException("Stored file not found");
+		}
+		return Files.newInputStream(path);
+	}
+
+	@Override
+	public StoredObject head(String storageKey) throws IOException {
+		Path path = resolve(storageKey);
+		if (!Files.exists(path) || !Files.isRegularFile(path)) {
+			throw new IOException("Stored file not found");
+		}
+		return new StoredObject(storageKey, Files.size(path), null);
 	}
 
 	@Override
@@ -53,6 +76,11 @@ public class LocalFileStorageService implements FileStorageService {
 		} catch (IOException exception) {
 			return false;
 		}
+	}
+
+	@Override
+	public boolean isAvailable() {
+		return true;
 	}
 
 	@Override
