@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuthLayout, FormAlert } from '../components/auth/AuthLayout.jsx'
 import { PasswordField } from '../components/auth/PasswordField.jsx'
-import { authApi } from '../services/api/authApi.js'
+import { resetAccountPassword } from '../features/auth/authActions.js'
 import { errorMessage } from '../services/api/errors.js'
 
 export function ResetPasswordPage() {
@@ -11,15 +11,19 @@ export function ResetPasswordPage() {
   const [password, setPassword] = useState('')
   const [done, setDone] = useState(false)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   async function submit(event) {
     event.preventDefault()
     setError('')
+    setSubmitting(true)
     try {
-      await authApi.resetPassword(token, password)
+      await resetAccountPassword(token, password)
       setDone(true)
     } catch (requestError) {
       setError(errorMessage(requestError))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -29,7 +33,7 @@ export function ResetPasswordPage() {
         <form className="auth-form" onSubmit={submit}>
           <FormAlert>{error}</FormAlert>
           <PasswordField id="new-password" label="Mật khẩu mới" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" />
-          <button className="primary-button" disabled={password.length < 8}>Đổi mật khẩu</button>
+          <button className="primary-button" type="submit" disabled={submitting || password.length < 8}>{submitting ? 'Đang cập nhật…' : 'Đổi mật khẩu'}</button>
         </form>
       )}
     </AuthLayout>

@@ -18,6 +18,7 @@ export const useChatStore = create((set, get) => ({
   conversations: [],
   conversationStatus: 'idle',
   conversationError: null,
+  conversationRequestId: 0,
   messagesByConversation: {},
   pagesByConversation: {},
   typingByConversation: {},
@@ -25,14 +26,22 @@ export const useChatStore = create((set, get) => ({
   notificationUnread: 0,
 
   loadConversations: async ({ signal, query = '' } = {}) => {
-    set({ conversationStatus: 'loading', conversationError: null })
+    const requestId = get().conversationRequestId + 1
+    set({ conversationRequestId: requestId, conversationStatus: 'loading', conversationError: null })
     try {
       const conversations = await conversationApi.list({ signal, query })
+      if (get().conversationRequestId !== requestId) return conversations
       set({ conversations: sortConversations(conversations), conversationStatus: 'success' })
       return conversations
     } catch (error) {
       const normalized = normalizeApiError(error)
-      if (normalized.code === 'REQUEST_CANCELED') return []
+      if (get().conversationRequestId !== requestId) return []
+      if (normalized.code === 'REQUEST_CANCELED') {
+        set((state) => ({
+          conversationStatus: state.conversations.length ? 'success' : 'idle',
+        }))
+        return []
+      }
       set({ conversationStatus: 'error', conversationError: normalized })
       throw normalized
     }
@@ -203,6 +212,7 @@ export const useChatStore = create((set, get) => ({
       conversations: [],
       conversationStatus: 'idle',
       conversationError: null,
+      conversationRequestId: 0,
       messagesByConversation: {},
       pagesByConversation: {},
       typingByConversation: {},

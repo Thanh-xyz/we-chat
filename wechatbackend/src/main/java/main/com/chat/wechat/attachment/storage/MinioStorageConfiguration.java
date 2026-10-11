@@ -1,6 +1,10 @@
 package main.com.chat.wechat.attachment.storage;
 
 import io.minio.MinioClient;
+import io.minio.BucketExistsArgs;
+import io.minio.MakeBucketArgs;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
@@ -25,6 +29,26 @@ public class MinioStorageConfiguration {
 		return () -> storage.healthCheck()
 				? Health.up().build()
 				: Health.down().build();
+	}
+
+	@Bean
+	public ApplicationRunner minioBucketInitializer(
+			@Qualifier("minioClient") MinioClient client,
+			StorageProperties properties) {
+		return args -> {
+			if (client.bucketExists(BucketExistsArgs.builder().bucket(properties.bucket()).build())) {
+				return;
+			}
+			try {
+				client.makeBucket(MakeBucketArgs.builder().bucket(properties.bucket()).build());
+			} catch (Exception creationFailure) {
+				// Two replicas may observe an empty bucket at the same time. Treat
+				// the already-owned race as successful, but fail for other errors.
+				if (!client.bucketExists(BucketExistsArgs.builder().bucket(properties.bucket()).build())) {
+					throw creationFailure;
+				}
+			}
+		};
 	}
 
 	private MinioClient.Builder builder(String endpoint, StorageProperties properties) {

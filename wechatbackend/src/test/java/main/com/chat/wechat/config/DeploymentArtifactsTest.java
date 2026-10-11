@@ -57,8 +57,8 @@ class DeploymentArtifactsTest {
 				"${REDIS_PASSWORD:?",
 				"RATE_LIMIT_DISTRIBUTED_ENABLED",
 				"RATE_LIMIT_AUTH_LOGIN_CAPACITY",
-				"image: minio/minio:RELEASE.2025-10-15T17-29-55Z",
-				"minio-init:",
+				"image: alpine/minio:RELEASE.2025-10-15T17-29-55Z",
+				"minio-permissions:",
 				"STORAGE_BUCKET",
 				"STORAGE_PRESIGNED_ENDPOINT",
 				"condition: service_healthy");

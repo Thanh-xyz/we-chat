@@ -34,7 +34,7 @@ export function ConversationList({ conversations, activeId, messagesByConversati
             <span className="conversation-copy">
               <span className="conversation-row">
                 <strong>{name}</strong>
-                <time>{formatConversationTime(conversation.lastMessageAt || conversation.updatedAt)}</time>
+                <time dateTime={conversation.lastMessageAt || conversation.updatedAt}>{formatConversationTime(conversation.lastMessageAt || conversation.updatedAt)}</time>
               </span>
               <span className="conversation-row conversation-row--meta">
                 <span>{preview}</span>

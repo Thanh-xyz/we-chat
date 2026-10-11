@@ -13,6 +13,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest(properties = {
 		"app.jwt.secret=postgres-integration-secret-at-least-32-bytes",
 		"spring.config.import=",
+		"spring.datasource.hikari.connection-init-sql=SET TIME ZONE 'UTC'",
 		"app.notification.executor.shutdown-timeout=PT1S"
 })
 @ActiveProfiles("test")

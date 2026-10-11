@@ -152,7 +152,7 @@ Send a STOMP `CONNECT` frame containing `authorization:Bearer <access-token>`. T
 docker compose --env-file .env -f docker/docker-compose.yml logs -f backend
 docker compose --env-file .env -f docker/docker-compose.yml logs -f gateway frontend
 docker compose --env-file .env -f docker/docker-compose.yml logs -f postgres redis
-docker compose --env-file .env -f docker/docker-compose.yml logs -f minio minio-init
+docker compose --env-file .env -f docker/docker-compose.yml logs -f minio backend
 ```
 
 The Nginx access format logs `$uri` without query parameters so reset or verification tokens in browser URLs are not written to access logs.

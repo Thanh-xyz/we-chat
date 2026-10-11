@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentTypeFor, formatFileSize, validateAttachment } from './attachments.js'
+import {
+  ATTACHMENT_ACCEPT,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  attachmentTypeFor,
+  formatFileSize,
+  formatFileSizeInKilobytes,
+  validateAttachment,
+} from './attachments.js'
 
 describe('attachment validation', () => {
   it('maps supported media to the backend message types', () => {
@@ -17,5 +24,12 @@ describe('attachment validation', () => {
   it('formats upload sizes for the queue', () => {
     expect(formatFileSize(1024)).toBe('1 KB')
     expect(formatFileSize(1024 * 1024)).toBe('1.0 MB')
+    expect(formatFileSizeInKilobytes(1024 * 1024)).toBe('1024 KB')
+  })
+
+  it('exposes shared input constraints for the composer', () => {
+    expect(MAX_ATTACHMENTS_PER_MESSAGE).toBe(10)
+    expect(ATTACHMENT_ACCEPT).toContain('image/png')
+    expect(ATTACHMENT_ACCEPT).toContain('application/pdf')
   })
 })

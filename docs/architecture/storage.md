@@ -54,7 +54,7 @@ app.storage.download-url-ttl=PT5M
 
 `endpoint` is for backend-to-storage traffic. `presigned-endpoint` must be resolvable by browsers; in local Compose only the MinIO API is bound to loopback port `9000`, while the administration console is not published. Production should use a TLS object endpoint or an S3-compatible provider and keep MinIO administration private.
 
-Compose creates the private bucket once through the idempotent `minio-init` service. Backend replicas do not race to create it. The `minio_data` named volume is persistence, not backup; production still needs object backup/replication and a tested recovery procedure.
+Compose first fixes the persistent volume ownership for the pinned local MinIO image, then starts MinIO as its default non-root user. The community image requires `no-new-privileges` to be disabled for that startup path; the backend, frontend, and gateway retain their existing hardening controls. Each backend performs an idempotent bucket-existence check and creates the private bucket when needed; a concurrent create is treated as success after re-checking. The `minio_data` named volume is persistence, not backup; production still needs object backup/replication and a tested recovery procedure.
 
 ## Delete and retention
 

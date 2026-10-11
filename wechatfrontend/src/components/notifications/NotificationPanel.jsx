@@ -10,9 +10,9 @@ export function NotificationPanel({ notifications, status, error, onLoad, onClos
   }, [notifications.length, onLoad, status])
 
   return (
-    <section className="notification-panel" aria-label="Thông báo">
+    <section className="notification-panel" role="dialog" aria-labelledby="notification-panel-title">
       <header>
-        <div><strong>Thông báo</strong><small>Cập nhật từ các cuộc trò chuyện và liên hệ</small></div>
+        <div><strong id="notification-panel-title">Thông báo</strong><small>Cập nhật từ các cuộc trò chuyện và liên hệ</small></div>
         <div className="notification-panel-actions">
           <button type="button" className="icon-button" onClick={onReadAll} aria-label="Đánh dấu tất cả đã đọc" title="Đánh dấu tất cả đã đọc"><CheckCheck size={17} /></button>
           <button type="button" className="icon-button" onClick={onClose} aria-label="Đóng thông báo"><X size={17} /></button>

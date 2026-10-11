@@ -45,3 +45,5 @@ secret/
 *.njsproj
 *.sln
 *.sw?
+
+REFACTOR_PLAN.md
