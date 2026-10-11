@@ -60,34 +60,22 @@ services:
       - minio_data:/data
     networks:
       - app
+    depends_on:
+      minio-permissions:
+        condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/ready >/dev/null"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/minio/health/ready"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 10s
-    security_opt:
-      - no-new-privileges:true
     restart: unless-stopped
 
-  minio-init:
-    image: minio/mc:RELEASE.2025-07-16T15-35-03Z
-    environment:
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in .env}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in .env}"
-      STORAGE_BUCKET: "${STORAGE_BUCKET:-attachments}"
-    networks:
-      - app
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null
-        && mc mb --ignore-existing "local/$${STORAGE_BUCKET}" >/dev/null
-        && mc anonymous set none "local/$${STORAGE_BUCKET}" >/dev/null
-        && echo "MinIO bucket initialized"
+  minio-permissions:
+    image: busybox:1.36.1
+    command: ["sh", "-c", "chown -R 100:101 /data"]
+    volumes:
+      - minio_data:/data
     restart: "no"
 
   backend:
@@ -208,8 +196,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-T", "3", "-O", "/dev/null", "http://127.0.0.1:8080/actuator/health/readiness"]
       interval: 10s

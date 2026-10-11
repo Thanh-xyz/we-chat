@@ -13,8 +13,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import java.util.HexFormat;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,11 +24,11 @@ class MinioObjectStorageIT {
 	private static final String BUCKET = "attachments";
 
 	@Container
-	static final GenericContainer<?> MINIO = new GenericContainer<>(DockerImageName.parse("minio/minio:RELEASE.2025-10-15T17-29-55Z"))
+	static final GenericContainer<?> MINIO = new GenericContainer<>(DockerImageName.parse("alpine/minio:RELEASE.2025-10-15T17-29-55Z"))
 			.withEnv("MINIO_ROOT_USER", ACCESS_KEY)
 			.withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
 			.withExposedPorts(9000)
-			.withCommand("server", "/data", "--address", ":9000")
+			.withCommand("server", "/tmp/minio-data", "--address", ":9000")
 			.waitingFor(org.testcontainers.containers.wait.strategy.Wait.forHttp("/minio/health/ready").forPort(9000));
 
 	private static MinioObjectStorageService storage;
@@ -67,7 +65,9 @@ class MinioObjectStorageIT {
 
 		assertThat(upload.statusCode()).isBetween(200, 299);
 		assertThat(storage.head(key).size()).isEqualTo(content.length);
-		assertThat(storage.openStream(key).readAllBytes()).isEqualTo(content);
+		try (var stream = storage.openStream(key)) {
+			assertThat(stream.readAllBytes()).isEqualTo(content);
+		}
 		assertThat(storage.signedUrl(key, Duration.ofMinutes(2))).doesNotContain("r16-test-secret");
 
 		storage.delete(key);

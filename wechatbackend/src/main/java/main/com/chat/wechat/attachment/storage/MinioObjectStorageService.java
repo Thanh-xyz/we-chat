@@ -11,6 +11,7 @@ import io.minio.Http.Method;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -29,7 +30,9 @@ public class MinioObjectStorageService implements FileStorageService {
 	private final StorageProperties properties;
 
 	public MinioObjectStorageService(
+			@Qualifier("minioClient")
 			MinioClient client,
+			@Qualifier("minioPresignedClient")
 			MinioClient presignedClient,
 			StorageProperties properties) {
 		this.client = client;
