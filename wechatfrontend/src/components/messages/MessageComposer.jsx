@@ -1,10 +1,11 @@
 import { File, Image, Mic, Paperclip, RotateCcw, SendHorizontal, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { attachmentApi } from '../../services/api/attachmentApi.js'
+import { useAttachmentQueue } from '../../features/messages/useAttachmentQueue.js'
 import { errorMessage } from '../../services/api/errors.js'
-import { formatFileSize, validateAttachment } from '../../utils/attachments.js'
-
-const MAX_ATTACHMENTS = 10
+import {
+  ATTACHMENT_ACCEPT,
+  formatFileSize,
+} from '../../utils/attachments.js'
 
 function attachmentIcon(type) {
   if (type === 'IMAGE') return Image
@@ -14,17 +15,15 @@ function attachmentIcon(type) {
 
 export function MessageComposer({ conversationId, onSend, onTyping, draft = '', onDraftChange }) {
   const [content, setContent] = useState(draft)
-  const [attachments, setAttachments] = useState([])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const stopTimer = useRef(null)
   const lastTypingSentAt = useRef(0)
   const inputRef = useRef(null)
-  const uploadControllers = useRef(new Map())
+  const { attachments, addFiles, removeAttachment, retryAttachment, clearAttachments } = useAttachmentQueue(conversationId)
 
   useEffect(() => () => {
     clearTimeout(stopTimer.current)
-    uploadControllers.current.forEach((controller) => controller.abort())
     onTyping(false)
   }, [conversationId, onTyping])
 
@@ -48,61 +47,6 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
     stopTimer.current = setTimeout(() => onTyping(false), 1_800)
   }
 
-  function updateAttachment(id, patch) {
-    setAttachments((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item))
-  }
-
-  async function uploadAttachment(item) {
-    const controller = new AbortController()
-    uploadControllers.current.set(item.id, controller)
-    updateAttachment(item.id, { status: 'uploading', progress: 0 })
-    try {
-      const result = await attachmentApi.upload(conversationId, item.file, item.fileType, {
-        signal: controller.signal,
-        onUploadProgress: (event) => updateAttachment(item.id, { progress: event.total ? Math.round((event.loaded / event.total) * 100) : 0 }),
-      })
-      updateAttachment(item.id, { status: 'success', progress: 100, result })
-    } catch (requestError) {
-      const cancelled = requestError.code === 'ERR_CANCELED' || requestError.code === 'REQUEST_CANCELED'
-      updateAttachment(item.id, { status: cancelled ? 'cancelled' : 'failed', error: cancelled ? 'Đã hủy tải lên.' : errorMessage(requestError) })
-    } finally {
-      uploadControllers.current.delete(item.id)
-    }
-  }
-
-  function addFiles(event) {
-    const files = [...event.target.files]
-    event.target.value = ''
-    if (!files.length) return
-    const available = Math.max(0, MAX_ATTACHMENTS - attachments.length)
-    const next = files.slice(0, available).map((file) => {
-      const validation = validateAttachment(file)
-      return {
-        id: crypto.randomUUID(),
-        file,
-        fileType: validation.fileType,
-        status: validation.valid ? 'queued' : 'failed',
-        progress: 0,
-        error: validation.valid ? '' : validation.message,
-      }
-    })
-    setAttachments((current) => [...current, ...next])
-    next.filter((item) => item.status === 'queued').forEach(uploadAttachment)
-  }
-
-  async function removeAttachment(item) {
-    uploadControllers.current.get(item.id)?.abort()
-    if (item.result?.id) {
-      try { await attachmentApi.remove(item.result.id) } catch { /* best-effort cleanup */ }
-    }
-    setAttachments((current) => current.filter((candidate) => candidate.id !== item.id))
-  }
-
-  function retryAttachment(item) {
-    updateAttachment(item.id, { status: 'queued', error: '' })
-    uploadAttachment(item)
-  }
-
   async function submit() {
     const normalized = content.trim()
     const successful = attachments.filter((item) => item.status === 'success')
@@ -122,7 +66,7 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
     setError('')
     try {
       await onSend({ content: normalized || null, messageType, attachmentIds: successful.map((item) => item.result.id) })
-      setAttachments([])
+      clearAttachments()
       setContent('')
       onDraftChange?.('')
       onTyping(false)
@@ -157,7 +101,7 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
         </div>
       })}</div>}
       <div className="composer">
-        <input ref={inputRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/webm,audio/x-m4a,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,application/zip,application/x-zip-compressed" onChange={addFiles} />
+        <input ref={inputRef} type="file" hidden multiple accept={ATTACHMENT_ACCEPT} onChange={addFiles} />
         <button type="button" className="icon-button composer-attach" onClick={() => inputRef.current?.click()} aria-label="Đính kèm tệp" title="Đính kèm tệp"><Paperclip size={19} /></button>
         <textarea
           aria-label="Nội dung tin nhắn"

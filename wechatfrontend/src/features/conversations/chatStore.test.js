@@ -50,4 +50,19 @@ describe('chat store cursor and realtime flow', () => {
     await useChatStore.getState().handleRealtimeEvent({ type: 'conversation.unread.updated', conversationId: 'c1', payload: { unreadCount: 7 } })
     expect(useChatStore.getState().conversations[0].unreadCount).toBe(7)
   })
+
+  it('ignores a stale conversation search response', async () => {
+    let resolveFirst
+    const first = new Promise((resolve) => { resolveFirst = resolve })
+    conversationApi.list.mockReturnValueOnce(first).mockResolvedValueOnce([{ id: 'new' }])
+
+    const firstSearch = useChatStore.getState().loadConversations({ query: 'old' })
+    const secondSearch = useChatStore.getState().loadConversations({ query: 'new' })
+    await secondSearch
+    resolveFirst([{ id: 'old' }])
+    await firstSearch
+
+    expect(useChatStore.getState().conversations).toEqual([{ id: 'new' }])
+    expect(useChatStore.getState().conversationStatus).toBe('success')
+  })
 })

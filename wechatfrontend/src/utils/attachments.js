@@ -4,6 +4,8 @@ export const ATTACHMENT_LIMITS = {
   VOICE: 25 * 1024 * 1024,
 }
 
+export const MAX_ATTACHMENTS_PER_MESSAGE = 10
+
 const MIME_TYPES = {
   IMAGE: new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']),
   VOICE: new Set(['audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/webm', 'audio/x-m4a']),
@@ -20,6 +22,10 @@ const MIME_TYPES = {
     'application/x-zip-compressed',
   ]),
 }
+
+export const ATTACHMENT_ACCEPT = Object.values(MIME_TYPES)
+  .flatMap((types) => [...types])
+  .join(',')
 
 export function attachmentTypeFor(file) {
   if (file.type.startsWith('image/')) return 'IMAGE'
@@ -45,4 +51,8 @@ export function formatFileSize(bytes = 0) {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+export function formatFileSizeInKilobytes(bytes = 0) {
+  return `${Math.ceil(bytes / 1024)} KB`
 }

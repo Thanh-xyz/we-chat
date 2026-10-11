@@ -104,6 +104,7 @@ button.connection-badge { cursor: pointer; }
 .sidebar-empty strong { color: var(--ink-800); font-size: .88rem; }
 .sidebar-empty span { max-width: 240px; font-size: .77rem; line-height: 1.5; }
 .sidebar-empty--error { color: var(--danger); }
+.sidebar-empty .secondary-button { min-height: 36px; margin-top: 4px; padding-inline: 14px; font-size: .75rem; }
 .conversation-skeletons { padding: 3px 18px; display: grid; gap: 14px; }
 .conversation-skeletons span { height: 56px; border-radius: 13px; background: linear-gradient(90deg, #f0f1f5, #f7f7fa, #f0f1f5); background-size: 200%; animation: shimmer 1.3s linear infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }

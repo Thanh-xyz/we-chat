@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuthLayout, FormAlert } from '../components/auth/AuthLayout.jsx'
-import { authApi } from '../services/api/authApi.js'
+import { verifyAccountEmail } from '../features/auth/authActions.js'
 import { errorMessage } from '../services/api/errors.js'
 
 export function VerifyEmailPage() {
@@ -12,16 +12,17 @@ export function VerifyEmailPage() {
 
   useEffect(() => {
     if (!token) return
+    const controller = new AbortController()
     let active = true
-    authApi.verifyEmail(token).then(() => {
+    verifyAccountEmail(token, { signal: controller.signal }).then(() => {
       if (active) setStatus('success')
     }).catch((requestError) => {
-      if (active) {
+      if (active && requestError.code !== 'ERR_CANCELED' && requestError.code !== 'REQUEST_CANCELED') {
         setStatus('error')
         setMessage(errorMessage(requestError))
       }
     })
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [token])
 
   return (

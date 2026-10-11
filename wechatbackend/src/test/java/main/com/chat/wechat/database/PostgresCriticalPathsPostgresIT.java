@@ -121,7 +121,7 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 				""", String.class);
 		assertThat(migratedVersions).containsExactly(
 				"1", "2", "3", "4", "5", "6", "7", "8", "9",
-				"10", "11", "12", "13", "14", "15", "16", "17", "18");
+				"10", "11", "12", "13", "14", "15", "16", "17", "18", "19");
 
 		assertThat(jdbc.queryForObject(
 				"select count(*) from pg_extension where extname = 'pg_trgm'", Integer.class)).isEqualTo(1);
@@ -526,27 +526,30 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 	void explainAnalyzeUsesKeysetAndTrigramIndexes() throws Exception {
 		User sender = insertUser(170, "perf", "perf@example.com", "Performance");
 		UUID conversationId = insertConversation(171, "GROUP", "Performance", sender.id(), null);
+		UUID otherConversationId = insertConversation(172, "GROUP", "Performance Other", sender.id(), null);
 		jdbc.update("""
 				insert into messages (
 				    id, conversation_id, sender_id, content, message_type,
 				    is_edited, is_recalled, created_at, updated_at
 				)
 				select md5('r18-perf-' || series)::uuid,
-				       ?, ?,
+				       case when series <= 5000 then ? else ? end, ?,
 				       case when series % 100 = 0 then 'rare-performance-needle' else 'ordinary message ' || series end,
 				       'TEXT', false, false,
 				       timestamptz '2026-01-01 00:00:00+00' + series * interval '1 millisecond',
 				       timestamptz '2026-01-01 00:00:00+00' + series * interval '1 millisecond'
-				from generate_series(1, 5000) series
-				""", conversationId, sender.id());
+				from generate_series(1, 50000) series
+				""", conversationId, otherConversationId, sender.id());
 		jdbc.execute("analyze messages");
 
 		String historyPlan;
 		String searchPlan;
+		String trigramPlan;
 		try (Connection connection = dataSource.getConnection()) {
 			connection.setAutoCommit(false);
 			try (Statement statement = connection.createStatement()) {
 				statement.execute("set local enable_seqscan = off");
+				statement.execute("set local enable_incremental_sort = off");
 			}
 			historyPlan = explain(connection, """
 					select * from messages
@@ -556,21 +559,29 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 					limit 50
 					""", conversationId, timestamp(Instant.parse("2026-01-01T00:00:04Z")),
 					timestamp(Instant.parse("2026-01-01T00:00:04Z")), id(999_000));
-			searchPlan = explain(connection, """
+				searchPlan = explain(connection, """
 					select * from messages
 					where conversation_id = ?
 					  and deleted_at is null and is_recalled = false and recalled_at is null
-					  and lower(content) like ?
+					  and lower(content) like '%rare-performance-needle%'
 					order by created_at desc, id desc
 					limit 50
-					""", conversationId, "%rare-performance-needle%");
+					""", conversationId);
+				trigramPlan = explain(connection, """
+					select * from messages
+					where deleted_at is null and is_recalled = false
+					  and lower(content) % 'rare-performance-needle'
+					order by created_at desc, id desc
+					limit 50
+					""");
 			connection.rollback();
 		}
 
 		System.out.println("R18 keyset EXPLAIN (ANALYZE, BUFFERS):\n" + historyPlan);
-		System.out.println("R18 trigram EXPLAIN (ANALYZE, BUFFERS):\n" + searchPlan);
+		System.out.println("R18 conversation search EXPLAIN (ANALYZE, BUFFERS):\n" + searchPlan);
+		System.out.println("R18 trigram EXPLAIN (ANALYZE, BUFFERS):\n" + trigramPlan);
 		assertThat(historyPlan).contains("idx_messages_conversation_created_id");
-		assertThat(searchPlan).contains("idx_messages_content_trgm");
+		assertThat(trigramPlan).contains("idx_messages_content_trgm");
 		assertThat(historyPlan.toLowerCase()).doesNotContain("offset");
 	}
 

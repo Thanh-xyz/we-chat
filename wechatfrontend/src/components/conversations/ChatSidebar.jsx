@@ -78,7 +78,11 @@ export function ChatSidebar({
           {[1, 2, 3, 4].map((item) => <span key={item} />)}
         </div>
       ) : error ? (
-        <div className="sidebar-empty sidebar-empty--error"><strong>Không tải được danh sách</strong><span>{error.message}</span></div>
+        <div className="sidebar-empty sidebar-empty--error" role="alert">
+          <strong>Không tải được danh sách</strong>
+          <span>{error.message}</span>
+          <button type="button" className="secondary-button" onClick={() => onSearch(query)}>Thử lại</button>
+        </div>
       ) : (
         <ConversationList conversations={conversations} activeId={activeId} messagesByConversation={messagesByConversation} onSelect={onSelect} />
       )}

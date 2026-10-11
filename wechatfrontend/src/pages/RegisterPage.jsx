@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthLayout, FormAlert } from '../components/auth/AuthLayout.jsx'
 import { PasswordField } from '../components/auth/PasswordField.jsx'
-import { authApi } from '../services/api/authApi.js'
+import { registerAccount } from '../features/auth/authActions.js'
 import { errorMessage } from '../services/api/errors.js'
 
 const INITIAL_FORM = { username: '', email: '', displayName: '', password: '' }
@@ -19,12 +19,7 @@ export function RegisterPage() {
     setSubmitting(true)
     setError('')
     try {
-      const result = await authApi.register({
-        username: form.username.trim(),
-        email: form.email.trim(),
-        displayName: form.displayName.trim() || null,
-        password: form.password,
-      })
+      const result = await registerAccount(form)
       setRegisteredEmail(result.email)
     } catch (requestError) {
       setError(errorMessage(requestError))

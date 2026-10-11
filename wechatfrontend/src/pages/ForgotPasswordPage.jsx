@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthLayout, FormAlert } from '../components/auth/AuthLayout.jsx'
-import { authApi } from '../services/api/authApi.js'
+import { requestPasswordReset } from '../features/auth/authActions.js'
 import { errorMessage } from '../services/api/errors.js'
 
 export function ForgotPasswordPage() {
@@ -15,7 +15,7 @@ export function ForgotPasswordPage() {
     setSubmitting(true)
     setError('')
     try {
-      await authApi.forgotPassword(email.trim())
+      await requestPasswordReset(email)
       setSent(true)
     } catch (requestError) {
       setError(errorMessage(requestError))

@@ -50,7 +50,7 @@ export function MessageList({ conversationId, messages, page, currentUserId, typ
     return <div className="message-loading" aria-label="Đang tải tin nhắn"><span className="spinner" /><span>Đang tải cuộc trò chuyện…</span></div>
   }
   if (page?.status === 'error' && !messages.length) {
-    return <div className="message-state"><RotateCcw size={28} /><strong>Không tải được tin nhắn</strong><span>{page.error?.message}</span><button className="secondary-button" onClick={onRetry}>Thử lại</button></div>
+    return <div className="message-state" role="alert"><RotateCcw size={28} /><strong>Không tải được tin nhắn</strong><span>{page.error?.message}</span><button type="button" className="secondary-button" onClick={onRetry}>Thử lại</button></div>
   }
 
   return (

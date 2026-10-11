@@ -20,10 +20,10 @@ export const useContactStore = create((set, get) => ({
     try {
       const [friends, incoming, outgoing, blocked, summary] = await Promise.all([
         friendApi.list({ signal }),
-        friendApi.incoming(),
-        friendApi.outgoing(),
-        friendApi.blocked(),
-        friendApi.summary(),
+        friendApi.incoming({ signal }),
+        friendApi.outgoing({ signal }),
+        friendApi.blocked({ signal }),
+        friendApi.summary({ signal }),
       ])
       set({ friends, incoming, outgoing, blocked, summary, status: 'success' })
     } catch (error) {
