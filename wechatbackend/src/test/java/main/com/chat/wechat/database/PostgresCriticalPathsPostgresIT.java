@@ -40,7 +40,6 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -523,66 +522,101 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 
 	@Test
 	@EnabledIfEnvironmentVariable(named = "RUN_DB_PERF_TESTS", matches = "(?i)true|1")
-	void explainAnalyzeUsesKeysetAndTrigramIndexes() throws Exception {
+	void explainAnalyzeCoversContentSearchSelectivityAndConversationScope() throws Exception {
 		User sender = insertUser(170, "perf", "perf@example.com", "Performance");
-		UUID conversationId = insertConversation(171, "GROUP", "Performance", sender.id(), null);
-		UUID otherConversationId = insertConversation(172, "GROUP", "Performance Other", sender.id(), null);
+		UUID smallConversationId = insertConversation(171, "GROUP", "Performance Small", sender.id(), null);
+		UUID largeConversationId = insertConversation(172, "GROUP", "Performance Large", sender.id(), null);
 		jdbc.update("""
 				insert into messages (
 				    id, conversation_id, sender_id, content, message_type,
 				    is_edited, is_recalled, created_at, updated_at
 				)
-				select md5('r18-perf-' || series)::uuid,
+				select md5('r20-search-' || series)::uuid,
 				       case when series <= 5000 then ? else ? end, ?,
-				       case when series % 100 = 0 then 'rare-performance-needle' else 'ordinary message ' || series end,
+				       case when series % 100 = 0
+				            then 'rare-performance-needle common-performance-term ' || series
+				            else 'common-performance-term ordinary message ' || series
+				       end,
 				       'TEXT', false, false,
 				       timestamptz '2026-01-01 00:00:00+00' + series * interval '1 millisecond',
 				       timestamptz '2026-01-01 00:00:00+00' + series * interval '1 millisecond'
 				from generate_series(1, 50000) series
-				""", conversationId, otherConversationId, sender.id());
+				""", smallConversationId, largeConversationId, sender.id());
 		jdbc.execute("analyze messages");
 
-		String historyPlan;
-		String searchPlan;
-		String trigramPlan;
+		String rarePattern = "%rare-performance-needle%";
+		String commonPattern = "%common-performance-term%";
+		String noMatchPattern = "%no-such-performance-result%";
+		assertThat(contentSearchCount(smallConversationId, sender.id(), rarePattern)).isEqualTo(50);
+		assertThat(contentSearchCount(largeConversationId, sender.id(), rarePattern)).isEqualTo(450);
+		assertThat(contentSearchCount(smallConversationId, sender.id(), commonPattern)).isEqualTo(5_000);
+		assertThat(contentSearchCount(largeConversationId, sender.id(), commonPattern)).isEqualTo(45_000);
+		assertThat(contentSearchCount(smallConversationId, sender.id(), noMatchPattern)).isZero();
+		assertThat(contentSearchCount(largeConversationId, sender.id(), noMatchPattern)).isZero();
+
+		Map<String, String> plans = new LinkedHashMap<>();
 		try (Connection connection = dataSource.getConnection()) {
-			connection.setAutoCommit(false);
-			try (Statement statement = connection.createStatement()) {
-				statement.execute("set local enable_seqscan = off");
-				statement.execute("set local enable_incremental_sort = off");
+			for (Map.Entry<String, UUID> scope : Map.of(
+					"small", smallConversationId,
+					"large", largeConversationId).entrySet()) {
+				plans.put(scope.getKey() + "/rare", explainContentSearch(
+						connection, scope.getValue(), sender.id(), rarePattern));
+				plans.put(scope.getKey() + "/common", explainContentSearch(
+						connection, scope.getValue(), sender.id(), commonPattern));
+				plans.put(scope.getKey() + "/no-match", explainContentSearch(
+						connection, scope.getValue(), sender.id(), noMatchPattern));
 			}
-			historyPlan = explain(connection, """
-					select * from messages
-					where conversation_id = ? and deleted_at is null
-					  and (created_at < ? or (created_at = ? and id < ?))
-					order by created_at desc, id desc
-					limit 50
-					""", conversationId, timestamp(Instant.parse("2026-01-01T00:00:04Z")),
-					timestamp(Instant.parse("2026-01-01T00:00:04Z")), id(999_000));
-				searchPlan = explain(connection, """
-					select * from messages
-					where conversation_id = ?
-					  and deleted_at is null and is_recalled = false and recalled_at is null
-					  and lower(content) like '%rare-performance-needle%'
-					order by created_at desc, id desc
-					limit 50
-					""", conversationId);
-				trigramPlan = explain(connection, """
-					select * from messages
-					where deleted_at is null and is_recalled = false
-					  and lower(content) % 'rare-performance-needle'
-					order by created_at desc, id desc
-					limit 50
-					""");
-			connection.rollback();
 		}
 
-		System.out.println("R18 keyset EXPLAIN (ANALYZE, BUFFERS):\n" + historyPlan);
-		System.out.println("R18 conversation search EXPLAIN (ANALYZE, BUFFERS):\n" + searchPlan);
-		System.out.println("R18 trigram EXPLAIN (ANALYZE, BUFFERS):\n" + trigramPlan);
-		assertThat(historyPlan).contains("idx_messages_conversation_created_id");
-		assertThat(trigramPlan).contains("idx_messages_content_trgm");
-		assertThat(historyPlan.toLowerCase()).doesNotContain("offset");
+		plans.forEach((scenario, plan) -> System.out.println(
+				"R20 content-search EXPLAIN (ANALYZE, BUFFERS, VERBOSE) [" + scenario + "]:"
+						+ System.lineSeparator() + plan));
+		// Rare and no-match scopes should not regress into a full messages-table scan. Common terms
+		// remain intentionally unconstrained because a sequential scan can be the cost-based choice.
+		assertThat(plans.get("small/rare")).doesNotContain("Seq Scan on messages");
+		assertThat(plans.get("large/rare")).doesNotContain("Seq Scan on messages");
+		assertThat(plans.get("small/no-match")).doesNotContain("Seq Scan on messages");
+		assertThat(plans.get("large/no-match")).doesNotContain("Seq Scan on messages");
+	}
+
+	private int contentSearchCount(UUID conversationId, UUID actorUserId, String pattern) {
+		return jdbc.queryForObject("""
+				select count(*)
+				from messages m
+				where m.conversation_id = ?
+				  and m.deleted_at is null
+				  and m.is_recalled = false
+				  and m.recalled_at is null
+				  and not exists (
+				      select 1
+				      from message_user_deletions mud
+				      where mud.message_id = m.id and mud.user_id = ?
+				  )
+				  and lower(m.content) like ?
+				""", Integer.class, conversationId, actorUserId, pattern);
+	}
+
+	private String explainContentSearch(
+			Connection connection,
+			UUID conversationId,
+			UUID actorUserId,
+			String pattern) throws Exception {
+		return explain(connection, """
+				select m.*
+				from messages m
+				where m.conversation_id = ?
+				  and m.deleted_at is null
+				  and m.is_recalled = false
+				  and m.recalled_at is null
+				  and not exists (
+				      select 1
+				      from message_user_deletions mud
+				      where mud.message_id = m.id and mud.user_id = ?
+				  )
+				  and lower(m.content) like ?
+				order by m.created_at desc, m.id desc
+				limit ?
+				""", conversationId, actorUserId, pattern, 51);
 	}
 
 	private Map<String, String> indexDefinitions() {
@@ -754,7 +788,7 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 	}
 
 	private String explain(Connection connection, String query, Object... arguments) throws Exception {
-		try (PreparedStatement statement = connection.prepareStatement("explain (analyze, buffers) " + query)) {
+		try (PreparedStatement statement = connection.prepareStatement("explain (analyze, buffers, verbose) " + query)) {
 			for (int index = 0; index < arguments.length; index++) {
 				statement.setObject(index + 1, arguments[index]);
 			}

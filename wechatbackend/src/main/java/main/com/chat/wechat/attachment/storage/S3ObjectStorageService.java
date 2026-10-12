@@ -1,19 +1,22 @@
 package main.com.chat.wechat.attachment.storage;
 
-import io.minio.GetObjectArgs;
-import io.minio.GetPresignedObjectUrlArgs;
-import io.minio.MinioClient;
-import io.minio.PutObjectArgs;
-import io.minio.RemoveObjectArgs;
-import io.minio.StatObjectArgs;
-import io.minio.StatObjectResponse;
-import io.minio.Http.Method;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,32 +26,27 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Service
-@ConditionalOnProperty(name = "app.storage.type", havingValue = "minio")
-public class MinioObjectStorageService implements FileStorageService {
-	private final MinioClient client;
-	private final MinioClient presignedClient;
+@ConditionalOnProperty(name = "app.storage.type", havingValue = "s3")
+public class S3ObjectStorageService implements FileStorageService {
+	private final S3Client client;
+	private final S3Presigner presigner;
 	private final StorageProperties properties;
 
-	public MinioObjectStorageService(
-			@Qualifier("minioClient")
-			MinioClient client,
-			@Qualifier("minioPresignedClient")
-			MinioClient presignedClient,
-			StorageProperties properties) {
+	public S3ObjectStorageService(S3Client client, S3Presigner presigner, StorageProperties properties) {
 		this.client = client;
-		this.presignedClient = presignedClient;
+		this.presigner = presigner;
 		this.properties = properties;
 	}
 
 	@Override
 	public StoredFile upload(String storageKey, InputStream content, long contentLength, String contentType) throws IOException {
 		try {
-			client.putObject(PutObjectArgs.builder()
+			PutObjectRequest request = PutObjectRequest.builder()
 					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
-					.stream(content, contentLength, -1L)
+					.key(validateKey(storageKey))
 					.contentType(normalizeContentType(contentType))
-					.build());
+					.build();
+			client.putObject(request, RequestBody.fromInputStream(content, contentLength));
 			return new StoredFile(storageKey, contentLength);
 		} catch (Exception exception) {
 			throw storageIOException("upload", exception);
@@ -59,14 +57,18 @@ public class MinioObjectStorageService implements FileStorageService {
 	public PresignedObjectRequest presignedUpload(String storageKey, String contentType, long contentLength, Duration ttl) throws IOException {
 		try {
 			long expirySeconds = boundedExpirySeconds(ttl);
-			String url = presignedClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
-					.method(Method.PUT)
+			PutObjectRequest putObject = PutObjectRequest.builder()
 					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
-					.expiry((int) expirySeconds, TimeUnit.SECONDS)
-					.build());
+					.key(validateKey(storageKey))
+					.contentType(normalizeContentType(contentType))
+					.build();
+			PutObjectPresignRequest presign = PutObjectPresignRequest.builder()
+					.signatureDuration(Duration.ofSeconds(expirySeconds))
+					.putObjectRequest(putObject)
+					.build();
+			PresignedPutObjectRequest request = presigner.presignPutObject(presign);
 			return new PresignedObjectRequest(
-					url,
+					request.url().toString(),
 					Map.of("Content-Type", normalizeContentType(contentType)),
 					Instant.now().plusSeconds(expirySeconds));
 		} catch (Exception exception) {
@@ -82,9 +84,9 @@ public class MinioObjectStorageService implements FileStorageService {
 	@Override
 	public InputStream openStream(String storageKey) throws IOException {
 		try {
-			return client.getObject(GetObjectArgs.builder()
+			return client.getObject(GetObjectRequest.builder()
 					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
+					.key(validateKey(storageKey))
 					.build());
 		} catch (Exception exception) {
 			throw storageIOException("download", exception);
@@ -94,11 +96,11 @@ public class MinioObjectStorageService implements FileStorageService {
 	@Override
 	public StoredObject head(String storageKey) throws IOException {
 		try {
-			StatObjectResponse stat = client.statObject(StatObjectArgs.builder()
+			HeadObjectResponse response = client.headObject(HeadObjectRequest.builder()
 					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
+					.key(validateKey(storageKey))
 					.build());
-			return new StoredObject(storageKey, stat.size(), stat.contentType());
+			return new StoredObject(storageKey, response.contentLength(), response.contentType());
 		} catch (Exception exception) {
 			throw storageIOException("head", exception);
 		}
@@ -107,9 +109,9 @@ public class MinioObjectStorageService implements FileStorageService {
 	@Override
 	public void delete(String storageKey) throws IOException {
 		try {
-			client.removeObject(RemoveObjectArgs.builder()
+			client.deleteObject(DeleteObjectRequest.builder()
 					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
+					.key(validateKey(storageKey))
 					.build());
 		} catch (Exception exception) {
 			throw storageIOException("delete", exception);
@@ -128,7 +130,12 @@ public class MinioObjectStorageService implements FileStorageService {
 
 	@Override
 	public boolean isAvailable() {
-		return healthCheck();
+		try {
+			client.headBucket(request -> request.bucket(properties.bucket()));
+			return true;
+		} catch (Exception exception) {
+			return false;
+		}
 	}
 
 	@Override
@@ -140,23 +147,17 @@ public class MinioObjectStorageService implements FileStorageService {
 	public String signedUrl(String storageKey, Duration ttl) throws IOException {
 		try {
 			long expirySeconds = boundedExpirySeconds(ttl);
-			return presignedClient.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
-					.method(Method.GET)
-					.bucket(properties.bucket())
-					.object(validateKey(storageKey))
-					.expiry((int) expirySeconds, TimeUnit.SECONDS)
-					.build());
+			GetObjectPresignRequest presign = GetObjectPresignRequest.builder()
+					.signatureDuration(Duration.ofSeconds(expirySeconds))
+					.getObjectRequest(GetObjectRequest.builder()
+							.bucket(properties.bucket())
+							.key(validateKey(storageKey))
+							.build())
+					.build();
+			PresignedGetObjectRequest request = presigner.presignGetObject(presign);
+			return request.url().toString();
 		} catch (Exception exception) {
 			throw storageIOException("presign_download", exception);
-		}
-	}
-
-	public boolean healthCheck() {
-		try {
-			client.bucketExists(io.minio.BucketExistsArgs.builder().bucket(properties.bucket()).build());
-			return true;
-		} catch (Exception exception) {
-			return false;
 		}
 	}
 

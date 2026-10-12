@@ -41,7 +41,6 @@ class DeploymentArtifactsTest {
 				"condition: service_healthy",
 				"/actuator/health/readiness",
 				"postgres_data:/var/lib/postgresql/data",
-				"minio_data:/data",
 				"internal: true",
 				"read_only: true",
 				"no-new-privileges:true");
@@ -57,12 +56,13 @@ class DeploymentArtifactsTest {
 				"${REDIS_PASSWORD:?",
 				"RATE_LIMIT_DISTRIBUTED_ENABLED",
 				"RATE_LIMIT_AUTH_LOGIN_CAPACITY",
-				"image: alpine/minio:RELEASE.2025-10-15T17-29-55Z",
-				"minio-permissions:",
+				"STORAGE_TYPE",
+				"STORAGE_ENDPOINT",
+				"STORAGE_ACCESS_KEY",
 				"STORAGE_BUCKET",
 				"STORAGE_PRESIGNED_ENDPOINT",
 				"condition: service_healthy");
-		assertThat(compose).doesNotContain("uploads_data:/app/uploads", "rabbitmq:");
+		assertThat(compose).doesNotContain("uploads_data:/app/uploads", "rabbitmq:", "  minio:", "minio-permissions:", "minio_data:/data");
 	}
 
 	@Test
@@ -114,7 +114,7 @@ class DeploymentArtifactsTest {
 				"Compose/prod uses the R6 Redis-backed shared limiter",
 				"Raw JWT is never used as rate-limit identity or key",
 				"There is no durable outbox",
-				"Attachment/media bytes use private MinIO/S3-compatible storage",
+				"Attachment/media bytes use private Supabase Storage through its S3-compatible API",
 				"Local/test rate limiting is node-local",
 				"CI/CD is not implemented");
 	}

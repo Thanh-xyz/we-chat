@@ -1,10 +1,10 @@
 # Attachment API
 
-Production flow uses upload-before-send. Docker/prod uses private S3-compatible object storage:
+Production flow uses upload-before-send. Docker/prod uses a private Supabase Storage S3-compatible bucket:
 
 1. Client requests `POST /api/attachments/presigned-upload`.
 2. Server validates membership, size, extension and declared MIME type, generates the object key and returns a short-lived PUT URL.
-3. Client uploads directly to MinIO/S3, then calls `POST /api/attachments/complete`.
+3. Client uploads directly to Supabase Storage, then calls `POST /api/attachments/complete`.
 4. Server reads the object, verifies size, magic bytes, checksum and image decoding where applicable, then marks it `READY`.
 5. Client sends a message with `attachmentIds`.
 6. Backend checks every attachment is READY, owned by the current user, belongs to the same conversation, then attaches it to the message.
@@ -14,13 +14,16 @@ The legacy `POST /api/attachments/upload` multipart endpoint remains available f
 ## Configuration
 
 ```properties
-app.storage.type=minio
+app.storage.type=s3
 app.storage.local-root=uploads
-app.storage.endpoint=http://minio:9000
-app.storage.presigned-endpoint=http://localhost:9000
+app.storage.endpoint=https://<project-ref>.storage.supabase.co/storage/v1/s3
+app.storage.presigned-endpoint=https://<project-ref>.storage.supabase.co/storage/v1/s3
 app.storage.bucket=attachments
+app.storage.region=<region-from-supabase-dashboard>
+app.storage.path-style=true
 app.storage.upload-url-ttl=PT10M
 app.storage.download-url-ttl=PT5M
+app.storage.operation-timeout=PT5S
 app.attachment.image-max-size=10MB
 app.attachment.file-max-size=50MB
 app.attachment.voice-max-size=25MB
