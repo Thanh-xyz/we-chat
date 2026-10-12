@@ -31,6 +31,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import javax.imageio.ImageIO;
+import javax.imageio.IIOException;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -600,6 +601,8 @@ public class AttachmentService {
 				throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Invalid image content");
 			}
 			return new ImageDimensions(image.getWidth(), image.getHeight());
+		} catch (IIOException exception) {
+			throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Invalid image content");
 		} catch (IOException exception) {
 			throw new ApiException(readFailureStatus, "Could not read image metadata");
 		}

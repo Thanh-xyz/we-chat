@@ -28,6 +28,7 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<aws.sdk.version>2.48.0</aws.sdk.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -91,17 +92,16 @@
 			<version>8.14.0</version>
 		</dependency>
 
-		<!-- S3-compatible object storage client; kept behind FileStorageService. -->
+		<!-- Supabase Storage S3-compatible client; kept behind FileStorageService. -->
 		<dependency>
-			<groupId>io.minio</groupId>
-			<artifactId>minio</artifactId>
-			<version>9.0.3</version>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws.sdk.version}</version>
 		</dependency>
-		<!-- MinIO 9 uses the JVM artifact for OkHttp runtime classes. -->
 		<dependency>
-			<groupId>com.squareup.okhttp3</groupId>
-			<artifactId>okhttp-jvm</artifactId>
-			<version>5.3.2</version>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>url-connection-client</artifactId>
+			<version>${aws.sdk.version}</version>
 		</dependency>
 
 		<dependency>
@@ -213,7 +213,7 @@
 			</build>
 		</profile>
 		<profile>
-			<id>minio-integration</id>
+			<id>s3-integration</id>
 			<build>
 				<plugins>
 					<plugin>
@@ -222,7 +222,7 @@
 						<configuration>
 							<failIfNoTests>true</failIfNoTests>
 							<includes>
-								<include>**/*Minio*IT.java</include>
+									<include>**/*ObjectStorageIT.java</include>
 							</includes>
 						</configuration>
 						<executions>

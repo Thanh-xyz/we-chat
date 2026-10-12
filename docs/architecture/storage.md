@@ -5,16 +5,16 @@ R16 moves attachment binaries out of each backend container's filesystem. Postgr
 ```text
 Browser ── REST authorization/finalize ──► Backend #1/#2 ──► PostgreSQL
    │                                      │
-   └── short-lived presigned PUT/GET ────┴──────────────► MinIO/S3
+   └── short-lived presigned PUT/GET ────┴──────────────► Supabase Storage S3 API
 ```
 
-The backend keeps the `FileStorageService` abstraction. `LocalFileStorageService` remains available for unit tests and explicit local fallback; `MinioObjectStorageService` is the Docker/production implementation and contains all MinIO SDK types. Business services never receive a bucket name or SDK object.
+The backend keeps the `FileStorageService` abstraction. `LocalFileStorageService` remains available for unit tests and explicit local fallback; the S3-compatible adapter uses the AWS SDK for Java v2 without requiring a local MinIO server. Business services never receive a bucket name or SDK object.
 
 ## Upload lifecycle
 
 1. `POST /api/attachments/presigned-upload` authenticates the user, checks conversation membership, extension, declared MIME type and the existing per-category size limit.
 2. The server generates an opaque UUID-based key under `attachments/quarantine/`, creates DB metadata with `storage_status=INIT`, and returns only the attachment ID, short-lived PUT URL, required headers and expiry.
-3. The browser uploads directly to MinIO/S3 without backend credentials.
+3. The browser uploads directly to Supabase Storage through a short-lived S3 presigned URL without backend credentials.
 4. `POST /api/attachments/complete` performs `HEAD`, size verification, magic-byte detection, SHA-256 calculation and `ImageIO` decoding for images. Only then does the row become `READY` and eligible for a message or download.
 5. Invalid or abandoned objects remain inaccessible and are removed by the bounded attachment cleanup job after the configured retention period.
 
@@ -24,7 +24,7 @@ The existing multipart endpoint remains available for compatibility. It performs
 
 `GET /api/attachments/{id}/download-url` first checks active-user and conversation membership, then returns a presigned GET URL with the configured short TTL. The legacy `/download` endpoint remains as an authenticated streaming fallback. Private bucket policy, not object ACLs, is used; application authorization happens before every URL is created.
 
-Presigned URLs are temporary credentials. They are not persisted, logged, or returned as attachment metadata. The frontend uses a URL only for the immediate transfer and never receives MinIO root credentials, access keys or secret keys.
+Presigned URLs are temporary credentials. They are not persisted, logged, or returned as attachment metadata. The frontend uses a URL only for the immediate transfer and never receives Supabase S3 access keys or secret keys.
 
 ## Keys and metadata
 
@@ -43,18 +43,21 @@ Only `READY` rows are returned by message/attachment access queries. `scan_statu
 ## Configuration
 
 ```properties
-app.storage.type=minio
-app.storage.endpoint=http://minio:9000
-app.storage.presigned-endpoint=http://localhost:9000
+app.storage.type=s3
+app.storage.endpoint=https://<project-ref>.storage.supabase.co/storage/v1/s3
+app.storage.presigned-endpoint=https://<project-ref>.storage.supabase.co/storage/v1/s3
 app.storage.bucket=attachments
-app.storage.region=us-east-1
+app.storage.region=<region-from-supabase-dashboard>
 app.storage.upload-url-ttl=PT10M
 app.storage.download-url-ttl=PT5M
+app.storage.operation-timeout=PT5S
 ```
 
-`endpoint` is for backend-to-storage traffic. `presigned-endpoint` must be resolvable by browsers; in local Compose only the MinIO API is bound to loopback port `9000`, while the administration console is not published. Production should use a TLS object endpoint or an S3-compatible provider and keep MinIO administration private.
+`endpoint` is the direct Supabase Storage S3 hostname used for backend and browser presigned requests. Supabase requires SigV4 and path-style addressing for this endpoint; do not rewrite the host after signing.
 
-Compose first fixes the persistent volume ownership for the pinned local MinIO image, then starts MinIO as its default non-root user. The community image requires `no-new-privileges` to be disabled for that startup path; the backend, frontend, and gateway retain their existing hardening controls. Each backend performs an idempotent bucket-existence check and creates the private bucket when needed; a concurrent create is treated as success after re-checking. The `minio_data` named volume is persistence, not backup; production still needs object backup/replication and a tested recovery procedure.
+Object-storage calls use a bounded connect/read/write/call timeout (`PT5S` by default, configurable through `STORAGE_OPERATION_TIMEOUT`) so a storage outage fails fast instead of tying up request threads.
+
+Each backend performs an idempotent bucket-existence check against Supabase and creates the private bucket when needed; a concurrent create is accepted only for the documented already-exists response. Supabase S3 access keys are server-only credentials with broad bucket access, so they must never enter the frontend bundle.
 
 ## Delete and retention
 
@@ -62,21 +65,22 @@ Attachment and message-recall deletion first makes metadata inaccessible and mar
 
 This is deliberately not an exactly-once distributed transaction between PostgreSQL and object storage. A deployment must monitor cleanup failures and retain the migration/verification procedure before deleting old local data.
 
-## Migration from local uploads
+## Migration boundary from existing MinIO
 
-R16 does not delete `uploads/` or run a mass migration at application startup. For an existing deployment:
+The current deployment still contains MinIO object metadata, so this migration does not delete or detach `minio_data`. Existing MinIO objects are deferred for an explicit copy-and-verify cutover; the old volume is the rollback source until every referenced row has been verified in Supabase. The application must not be considered fully cut over for legacy attachments until this procedure completes:
 
-1. stop or quiesce new uploads;
-2. enumerate DB rows whose storage key is a local path;
-3. upload each file to a server-generated object key;
-4. verify size and SHA-256, then update the row to the object key/type;
-5. verify representative downloads through every backend replica;
-6. only then archive/remove the local volume.
+1. quiesce new attachment writes;
+2. enumerate DB rows and MinIO objects without exposing object keys in logs;
+3. copy each object to the same bucket/key in Supabase using server-side credentials;
+4. verify size, content type and SHA-256 in both stores;
+5. verify representative downloads through every backend replica and record the manifest outside application logs;
+6. retain MinIO read access for rollback until the manifest is complete;
+7. only then stop/archive MinIO and remove its volume in a separately approved change.
 
-If the local volume is empty, the cutover can start directly with MinIO. The migration is an explicit one-time operational task, not part of normal startup.
+The copy is intentionally not part of normal startup and is not run automatically by the application.
 
 ## Health and observability
 
-MinIO contributes `objectStorage` to production readiness. It does not affect JVM liveness. Metrics use only fixed labels such as `operation`, `result` and `mediaType`; object keys, attachment IDs, filenames, checksums, URLs and credentials are never labels or log fields. No binary bytes are written to Redis.
+Supabase Storage contributes `objectStorage` to production readiness. It does not affect JVM liveness. Metrics use only fixed labels such as `operation`, `result` and `mediaType`; object keys, attachment IDs, filenames, checksums, URLs and credentials are never labels or log fields. No binary bytes are written to Redis.
 
-No antivirus scanner or distributed MinIO cluster is included in R16. TLS termination, backup/replication and malware scanning remain deployment/security responsibilities.
+No antivirus scanner, object backup/replication or malware scanning is included in R16. Supabase bucket lifecycle, retention and recovery remain deployment responsibilities.

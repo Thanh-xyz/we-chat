@@ -93,7 +93,7 @@ Audit metadata stores only safe metadata such as conversation id, message id, ca
 
 ## Storage
 
-The media module reads objects only through `FileStorageService`. In Docker/production, binaries are private MinIO/S3 objects; clients use the authorized `/download-url` endpoint for short-lived direct downloads, while `/download` remains an authenticated streaming fallback.
+The media module reads objects only through `FileStorageService`. In Docker/production, binaries are private Supabase Storage S3 objects; clients use the authorized `/download-url` endpoint for short-lived direct downloads, while `/download` remains an authenticated streaming fallback.
 
 ## Postman Flow
 

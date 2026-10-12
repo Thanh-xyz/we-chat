@@ -17,7 +17,8 @@ public record StorageProperties(
 		String region,
 		boolean pathStyle,
 		Duration uploadUrlTtl,
-		Duration downloadUrlTtl) {
+		Duration downloadUrlTtl,
+		Duration operationTimeout) {
 	@ConstructorBinding
 	public StorageProperties {
 		type = type == null || type.isBlank() ? "local" : type.trim().toLowerCase();
@@ -36,9 +37,13 @@ public record StorageProperties(
 		if (downloadUrlTtl.isNegative() || downloadUrlTtl.isZero() || downloadUrlTtl.compareTo(Duration.ofHours(1)) > 0) {
 			throw new IllegalArgumentException("app.storage.download-url-ttl must be between PT1S and PT1H");
 		}
+		operationTimeout = operationTimeout == null ? Duration.ofSeconds(5) : operationTimeout;
+		if (operationTimeout.isNegative() || operationTimeout.isZero() || operationTimeout.compareTo(Duration.ofMinutes(1)) > 0) {
+			throw new IllegalArgumentException("app.storage.operation-timeout must be between PT1S and PT1M");
+		}
 	}
 
 	public StorageProperties(String type, String localRoot) {
-		this(type, localRoot, "http://localhost:9000", "http://localhost:9000", "", "", "attachments", "us-east-1", true, Duration.ofMinutes(10), Duration.ofMinutes(5));
+		this(type, localRoot, "http://localhost:9000", "http://localhost:9000", "", "", "attachments", "us-east-1", true, Duration.ofMinutes(10), Duration.ofMinutes(5), Duration.ofSeconds(5));
 	}
 }

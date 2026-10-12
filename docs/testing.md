@@ -5,7 +5,7 @@ The backend has deliberately separate test layers:
 1. `mvn test` runs unit, service, fast application, and focused H2 tests. It does not require Docker. H2 PostgreSQL compatibility mode is a fast-test convenience, not proof of production PostgreSQL compatibility.
 2. `mvn verify -Ppostgres-integration` runs the fast suite and the `*IT` suite against an ephemeral `postgres:17` Testcontainer. Spring Boot obtains the random JDBC endpoint and credentials through `@ServiceConnection`; Flyway builds the database from empty state through the latest migration.
 3. `RUN_DB_PERF_TESTS=true mvn verify -Ppostgres-integration` additionally runs opt-in `EXPLAIN (ANALYZE, BUFFERS)` checks for representative keyset and trigram-search plans.
-4. `mvn verify -Pminio-integration` runs the object-storage integration class against a pinned MinIO Testcontainer. It covers presigned PUT, HEAD, GET, delete, health and unsafe-key rejection.
+4. `mvn verify -Ps3-integration` runs the S3-compatible object-storage integration class against a pinned local emulator. It covers presigned PUT, HEAD, GET, delete, health and unsafe-key rejection.
 
 ## Prerequisites and outcomes
 
@@ -25,13 +25,13 @@ Performance checks are opt-in because planner tests create representative data a
 
 ## Attachment runtime acceptance
 
-The MinIO integration profile verifies storage semantics in isolation. The R16 cross-instance proof must still run against Compose:
+The S3 integration profile verifies storage semantics in isolation. The R16 cross-instance proof must still run against Compose/Supabase:
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml config -q
 mvn test
-mvn verify -Pminio-integration
+mvn verify -Ps3-integration
 docker compose --env-file .env -f docker/docker-compose.yml up -d --scale backend=2
 ```
 
-Create a real account/session, upload an image through `POST /api/attachments/presigned-upload`, PUT to the returned URL, finalize it, and send a message reference. Then stop one backend container and open the attachment from the other replica through `GET /api/attachments/{id}/download-url`. The expected result is a successful download from shared MinIO, not a local filesystem lookup. Also verify a non-member receives `404` and that invalid magic bytes never become `READY`.
+Create a real account/session, upload an image through `POST /api/attachments/presigned-upload`, PUT to the returned URL, finalize it, and send a message reference. Then stop one backend container and open the attachment from the other replica through `GET /api/attachments/{id}/download-url`. The expected result is a successful download from shared Supabase Storage, not a local filesystem lookup. Also verify a non-member receives `404` and that invalid magic bytes never become `READY`.
