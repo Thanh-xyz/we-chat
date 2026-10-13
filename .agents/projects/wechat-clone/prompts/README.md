@@ -19,7 +19,11 @@ These prompts record earlier scopes and reported results. They are not automatic
 
 ## Next recommended task
 
-Prompt 24 is the next scoped task after the storage migration and backfill boundary. It is not active until explicitly selected by the user or project lead.
+Prompt 24/R11 has been executed. The next scoped task is the current Supabase-backed R16 runtime acceptance; it is not active until explicitly selected by the user or project lead.
+
+- [Prompt 25 — R16 Supabase Storage cross-replica runtime acceptance](prompt-25-r16-supabase-cross-replica-runtime.md)
+
+Prompt 24 remains available as the implementation/evidence brief:
 
 - [Prompt 24 — R11 Redis auth-state cache and cross-replica revocation](prompt-24-r11-auth-state-cache.md)
 
