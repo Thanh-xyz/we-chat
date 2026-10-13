@@ -3,10 +3,12 @@ package main.com.chat.wechat.realtime.security;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
 import main.com.chat.wechat.common.ratelimit.RateLimitKey;
 import main.com.chat.wechat.common.ratelimit.RateLimiter;
+import main.com.chat.wechat.common.security.AuthState;
+import main.com.chat.wechat.common.security.JwtClaims;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.JwtTokenService;
+import main.com.chat.wechat.common.security.UserAuthStateService;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
-import main.com.chat.wechat.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -18,12 +20,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
+import org.springframework.messaging.support.MessageHeaderAccessor;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.security.access.AccessDeniedException;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +44,7 @@ class WebSocketAuthChannelInterceptorTest {
 	private JwtTokenService jwtTokenService;
 
 	@Mock
-	private UserRepository userRepository;
+	private UserAuthStateService userAuthStateService;
 
 	@Mock
 	private ConversationMemberRepository conversationMemberRepository;
@@ -61,7 +65,7 @@ class WebSocketAuthChannelInterceptorTest {
 				new RateLimitProperties.Limit(20, 1));
 		interceptor = new WebSocketAuthChannelInterceptor(
 				jwtTokenService,
-				userRepository,
+				userAuthStateService,
 				conversationMemberRepository,
 				rateLimiter,
 				rateLimitProperties);
@@ -204,7 +208,7 @@ class WebSocketAuthChannelInterceptorTest {
 				new ObjectMapper());
 		WebSocketAuthChannelInterceptor canonicalInterceptor = new WebSocketAuthChannelInterceptor(
 				canonicalJwtTokenService,
-				userRepository,
+				userAuthStateService,
 				conversationMemberRepository,
 				rateLimiter,
 				new RateLimitProperties(
@@ -220,6 +224,33 @@ class WebSocketAuthChannelInterceptorTest {
 		assertThatThrownBy(() -> canonicalInterceptor.preSend(connectMessage(malformedToken), null))
 				.isInstanceOf(AccessDeniedException.class)
 				.hasMessage("Invalid WebSocket token");
+	}
+
+	@Test
+	void connectAcceptsCurrentUserStateAndSetsPrincipal() {
+		when(rateLimiter.tryConsume("ws-connect", RateLimitKey.ip("unknown"), new RateLimitProperties.Limit(20, 1)))
+				.thenReturn(true);
+		when(jwtTokenService.validateAccessToken("valid-token"))
+				.thenReturn(Optional.of(new JwtClaims(USER_ID, "user", "user@example.com", java.util.List.of("USER"), java.util.List.of(), 4)));
+		when(userAuthStateService.find(USER_ID)).thenReturn(Optional.of(new AuthState(USER_ID, 4, true)));
+
+		Message<?> response = interceptor.preSend(connectMessage("valid-token"), null);
+
+		assertThat(MessageHeaderAccessor.getAccessor(response, StompHeaderAccessor.class).getUser())
+				.isEqualTo(new WebSocketUserPrincipal(USER_ID, "user"));
+	}
+
+	@Test
+	void connectRejectsStaleTokenVersionFromSharedAuthState() {
+		when(rateLimiter.tryConsume("ws-connect", RateLimitKey.ip("unknown"), new RateLimitProperties.Limit(20, 1)))
+				.thenReturn(true);
+		when(jwtTokenService.validateAccessToken("stale-token"))
+				.thenReturn(Optional.of(new JwtClaims(USER_ID, "user", "user@example.com", java.util.List.of("USER"), java.util.List.of(), 4)));
+		when(userAuthStateService.find(USER_ID)).thenReturn(Optional.of(new AuthState(USER_ID, 5, true)));
+
+		assertThatThrownBy(() -> interceptor.preSend(connectMessage("stale-token"), null))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("Invalid WebSocket user");
 	}
 
 	@Test
@@ -270,6 +301,7 @@ class WebSocketAuthChannelInterceptorTest {
 			attributes.put(WebSocketClientIpHandshakeInterceptor.CLIENT_IP_ATTRIBUTE, clientIp);
 			accessor.setSessionAttributes(attributes);
 		}
+		accessor.setLeaveMutable(true);
 		return MessageBuilder.createMessage(new byte[0], accessor.getMessageHeaders());
 	}
 }

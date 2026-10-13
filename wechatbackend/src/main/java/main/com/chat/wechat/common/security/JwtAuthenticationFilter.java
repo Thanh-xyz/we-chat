@@ -4,7 +4,6 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -20,11 +19,11 @@ import java.util.List;
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private final JwtTokenService jwtTokenService;
-	private final UserRepository userRepository;
+	private final UserAuthStateService userAuthStateService;
 
-	public JwtAuthenticationFilter(JwtTokenService jwtTokenService, UserRepository userRepository) {
+	public JwtAuthenticationFilter(JwtTokenService jwtTokenService, UserAuthStateService userAuthStateService) {
 		this.jwtTokenService = jwtTokenService;
-		this.userRepository = userRepository;
+		this.userAuthStateService = userAuthStateService;
 	}
 
 	@Override
@@ -35,8 +34,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		String token = resolveBearerToken(request);
 		if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
 			jwtTokenService.validateAccessToken(token).ifPresent(claims -> {
-				boolean currentUserValid = userRepository.findById(claims.userId())
-						.filter(user -> user.active() && user.tokenVersion() == claims.tokenVersion())
+				boolean currentUserValid = userAuthStateService.find(claims.userId())
+						.filter(state -> state.active() && state.tokenVersion() == claims.tokenVersion())
 						.isPresent();
 				if (!currentUserValid) {
 					return;

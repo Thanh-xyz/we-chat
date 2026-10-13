@@ -1,5 +1,6 @@
 package main.com.chat.wechat.user.repository;
 
+import main.com.chat.wechat.common.security.AuthStateCache;
 import main.com.chat.wechat.user.model.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,11 +28,14 @@ class UserRepositoryTest {
 	@Mock
 	private JdbcTemplate jdbcTemplate;
 
+	@Mock
+	private AuthStateCache authStateCache;
+
 	private UserRepository userRepository;
 
 	@BeforeEach
 	void setUp() {
-		userRepository = new UserRepository(jdbcTemplate);
+		userRepository = new UserRepository(jdbcTemplate, authStateCache);
 	}
 
 	@Test
@@ -55,6 +59,7 @@ class UserRepositoryTest {
 				eq(Timestamp.from(now)),
 				eq(USER_ID));
 		assertThat(sqlCaptor.getValue()).contains("deleted_at = case when ? = 'DELETED' then ? else null end");
+		verify(authStateCache).invalidateAfterCommit(USER_ID);
 	}
 
 	@Test
@@ -76,6 +81,7 @@ class UserRepositoryTest {
 				eq(Timestamp.from(now)),
 				eq(Timestamp.from(now)),
 				eq(USER_ID));
+		verify(authStateCache).invalidateAfterCommit(USER_ID);
 	}
 
 	private User user(String accountStatus, boolean enabled, Instant deletedAt) {

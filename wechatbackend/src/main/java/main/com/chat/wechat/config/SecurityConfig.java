@@ -6,6 +6,7 @@ import main.com.chat.wechat.audit.service.AuditLogService;
 import main.com.chat.wechat.common.exception.ErrorResponse;
 import main.com.chat.wechat.common.ratelimit.RateLimitFilter;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
+import main.com.chat.wechat.common.security.AuthStateProperties;
 import main.com.chat.wechat.common.security.JwtAuthenticationFilter;
 import main.com.chat.wechat.common.security.JwtProperties;
 import main.com.chat.wechat.common.security.LoginSecurityProperties;
@@ -35,6 +36,7 @@ import java.time.Instant;
 @Configuration
 @EnableConfigurationProperties({
 		JwtProperties.class,
+		AuthStateProperties.class,
 		RbacProperties.class,
 		AuthEmailProperties.class,
 		RateLimitProperties.class,

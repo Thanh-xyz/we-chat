@@ -1,6 +1,8 @@
 package main.com.chat.wechat.user.repository;
 
+import main.com.chat.wechat.common.security.AuthStateCache;
 import main.com.chat.wechat.user.model.User;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -21,9 +23,12 @@ import java.util.UUID;
 @Repository
 public class UserRepository {
 	private final JdbcTemplate jdbcTemplate;
+	private final AuthStateCache authStateCache;
 
-	public UserRepository(JdbcTemplate jdbcTemplate) {
+	@Autowired
+	public UserRepository(JdbcTemplate jdbcTemplate, AuthStateCache authStateCache) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.authStateCache = authStateCache;
 	}
 
 	public User save(User user) {
@@ -221,6 +226,7 @@ public class UserRepository {
 				Timestamp.from(updatedAt),
 				Timestamp.from(updatedAt),
 				id);
+		authStateCache.invalidateAfterCommit(id);
 		return findByIdIncludingDeleted(id).orElseThrow();
 	}
 
@@ -252,6 +258,7 @@ public class UserRepository {
 				set token_version = token_version + 1, updated_at = ?
 				where id = ?
 				""", Timestamp.from(updatedAt), id);
+		authStateCache.invalidateAfterCommit(id);
 	}
 
 	public void updatePasswordAndIncrementTokenVersion(UUID id, String passwordHash, Instant updatedAt) {
@@ -264,6 +271,7 @@ public class UserRepository {
 				    updated_at = ?
 				where id = ?
 				""", passwordHash, Timestamp.from(updatedAt), id);
+		authStateCache.invalidateAfterCommit(id);
 	}
 
 	public void markEmailVerified(UUID id, Instant updatedAt) {
