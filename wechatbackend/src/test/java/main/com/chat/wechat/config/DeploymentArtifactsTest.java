@@ -88,6 +88,13 @@ class DeploymentArtifactsTest {
 	}
 
 	@Test
+	void websocketHandshakeReachesStompAuthentication() throws IOException {
+		String security = read("wechatbackend/src/main/java/main/com/chat/wechat/config/SecurityConfig.java");
+
+		assertThat(security).contains(".requestMatchers(\"/ws\").permitAll()");
+	}
+
+	@Test
 	void exampleEnvironmentAndBuildContextDoNotContainSecretValues() throws IOException {
 		String environment = read(".env.example");
 		String dockerignore = read(".dockerignore");

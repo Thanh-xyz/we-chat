@@ -11,7 +11,7 @@ const conversationId = process.env.E2E_CONVERSATION_ID
 async function login(page, identifier, secret) {
   await page.goto('/login')
   await page.getByLabel('Email hoặc tên người dùng').fill(identifier)
-  await page.getByLabel('Mật khẩu').fill(secret)
+  await page.locator('input[name="password"]').fill(secret)
   await page.getByRole('button', { name: 'Đăng nhập' }).click()
   await expect(page).toHaveURL(/\/app(?:\/|$)/)
 }
@@ -52,8 +52,9 @@ test('two authenticated browsers receive one realtime message', async ({ browser
 
     await pageA.getByLabel('Nội dung tin nhắn').fill(content)
     await pageA.getByRole('button', { name: 'Gửi tin nhắn' }).click()
-    await expect(pageB.getByText(content, { exact: true })).toBeVisible({ timeout: 20_000 })
-    await expect(pageB.getByText(content, { exact: true })).toHaveCount(1)
+    const receivedMessage = pageB.locator('.message-scroll').getByText(content, { exact: true })
+    await expect(receivedMessage).toBeVisible({ timeout: 20_000 })
+    await expect(receivedMessage).toHaveCount(1)
   } finally {
     await Promise.all([contextA.close(), contextB.close()])
   }
