@@ -1,11 +1,11 @@
 package main.com.chat.wechat.realtime.security;
 
 import main.com.chat.wechat.common.security.JwtTokenService;
+import main.com.chat.wechat.common.security.UserAuthStateService;
 import main.com.chat.wechat.common.ratelimit.RateLimitProperties;
 import main.com.chat.wechat.common.ratelimit.RateLimitKey;
 import main.com.chat.wechat.common.ratelimit.RateLimiter;
 import main.com.chat.wechat.conversation.repository.ConversationMemberRepository;
-import main.com.chat.wechat.user.repository.UserRepository;
 import org.springframework.http.HttpHeaders;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
@@ -33,19 +33,19 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 	private static final String USER_CONVERSATION_EVENTS_DESTINATION = "/user/queue/conversation-events";
 
 	private final JwtTokenService jwtTokenService;
-	private final UserRepository userRepository;
+	private final UserAuthStateService userAuthStateService;
 	private final ConversationMemberRepository conversationMemberRepository;
 	private final RateLimiter rateLimiter;
 	private final RateLimitProperties rateLimitProperties;
 
 	public WebSocketAuthChannelInterceptor(
 			JwtTokenService jwtTokenService,
-			UserRepository userRepository,
+			UserAuthStateService userAuthStateService,
 			ConversationMemberRepository conversationMemberRepository,
 			RateLimiter rateLimiter,
 			RateLimitProperties rateLimitProperties) {
 		this.jwtTokenService = jwtTokenService;
-		this.userRepository = userRepository;
+		this.userAuthStateService = userAuthStateService;
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.rateLimiter = rateLimiter;
 		this.rateLimitProperties = rateLimitProperties;
@@ -83,8 +83,8 @@ public class WebSocketAuthChannelInterceptor implements ChannelInterceptor {
 		}
 		var claims = jwtTokenService.validateAccessToken(token)
 				.orElseThrow(() -> new AccessDeniedException("Invalid WebSocket token"));
-		boolean currentUserValid = userRepository.findById(claims.userId())
-				.filter(user -> user.active() && user.tokenVersion() == claims.tokenVersion())
+		boolean currentUserValid = userAuthStateService.find(claims.userId())
+				.filter(state -> state.active() && state.tokenVersion() == claims.tokenVersion())
 				.isPresent();
 		if (!currentUserValid) {
 			throw new AccessDeniedException("Invalid WebSocket user");

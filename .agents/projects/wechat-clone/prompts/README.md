@@ -13,9 +13,15 @@ Các prompt riêng cho project WeChat được lưu trong thư mục này. Mỗi
 
 These prompts record earlier scopes and reported results. They are not automatically active and do not grant permission for a new task. Their repository-relative paths and Maven S3 profile have been updated for reuse; runtime claims still need fresh evidence.
 
-- [Prompt 21 — R16 Runtime Acceptance (rewritten)](../../../Prompt%2021%20-%20R16%20Runtime%20Acceptance%20-%20rewritten.md)
+- [Prompt 21 — R16 Runtime Acceptance (rewritten)](Prompt%2021%20-%20R16%20Runtime%20Acceptance%20-%20rewritten.md)
 - [Prompt 22 — Supabase Storage S3 migration](prompt-22-supabase-storage-s3-migration.md)
 - [Prompt 23 — MinIO to Supabase backfill](prompt-23-minio-to-supabase-backfill.md)
+
+## Next recommended task
+
+Prompt 24 is the next scoped task after the storage migration and backfill boundary. It is not active until explicitly selected by the user or project lead.
+
+- [Prompt 24 — R11 Redis auth-state cache and cross-replica revocation](prompt-24-r11-auth-state-cache.md)
 
 ## Recommended naming
 
