@@ -18,7 +18,15 @@ Không kích hoạt nhiều agent chỉ để tạo thêm ý kiến. Chọn agen
 | Storage upload/download, legacy migration boundary | `wechat_project_lead` | `wechat-storage-acceptance` |
 | Frontend API and STOMP integration | `wechat_project_lead` | `wechat-frontend-integration` |
 | Compose and runtime evidence | `wechat_project_lead` | `wechat-runtime-verification` |
-| Independent scoped review | `wechat_code_reviewer` | matching domain skill |
+| Independent scoped review | `wechat_code_reviewer` (read-only by instructions; inherits parent sandbox) | matching domain skill |
+
+## Sandbox and agent permissions
+
+Codex subagents inherit the parent session's sandbox and approval settings. Agent TOML instructions do not create a separate read-only boundary, and `sandbox_mode` is not a per-agent override.
+
+- Scout and reviewer instructions prohibit edits, but filesystem permissions still come from the parent session.
+- For filesystem-enforced read-only work, start the parent Codex session in read-only mode before spawning the agent. In the CLI, a separate session can be started with `codex exec --sandbox read-only -C <repo> "<task>"`.
+- When the main session is writable and an independent read-only review is required, use a separate Codex session with the read-only sandbox. If that is unavailable, describe the role as instruction-only read-only and do not claim sandbox enforcement.
 
 ## Standard task lifecycle
 
