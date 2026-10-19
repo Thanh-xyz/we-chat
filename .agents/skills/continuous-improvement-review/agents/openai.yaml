@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Review"
+  short_description: "Independent review with tracked findings"
+  default_prompt: "Use $continuous-improvement-review to review this diff against the approved plan."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Cook"
+  short_description: "Execute an approved plan step by step"
+  default_prompt: "Use $cook to implement the approved plan and report each step status."

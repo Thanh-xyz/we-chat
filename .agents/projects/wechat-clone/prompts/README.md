@@ -17,15 +17,21 @@ These prompts record earlier scopes and reported results. They are not automatic
 - [Prompt 22 — Supabase Storage S3 migration](prompt-22-supabase-storage-s3-migration.md)
 - [Prompt 23 — MinIO to Supabase backfill](prompt-23-minio-to-supabase-backfill.md)
 
-## Next recommended task
+## Completed and available R16 briefs
 
-Prompt 24/R11 has been executed. The next scoped task is the current Supabase-backed R16 runtime acceptance; it is not active until explicitly selected by the user or project lead.
-
-- [Prompt 25 — R16 Supabase Storage cross-replica runtime acceptance](prompt-25-r16-supabase-cross-replica-runtime.md)
-
-Prompt 24 remains available as the implementation/evidence brief:
+Prompt 24/R11, Prompt 25/Supabase storage acceptance, Prompt 26/authenticated frontend and realtime acceptance, and Prompt 27/realtime edge acceptance have been explicitly executed in the current project workflow. Their results remain historical evidence and must be reconfirmed when a later task depends on them.
 
 - [Prompt 24 — R11 Redis auth-state cache and cross-replica revocation](prompt-24-r11-auth-state-cache.md)
+- [Prompt 25 — R16 Supabase Storage cross-replica runtime acceptance](prompt-25-r16-supabase-cross-replica-runtime.md)
+- [Prompt 26 — R16 Authenticated Frontend and Realtime Runtime Acceptance](prompt-26-r16-autheticated-frontend-and-realtime.md)
+- [Prompt 27 — R16 Realtime Reconnect, Resynchronization, and Authorization Edge Acceptance](prompt-27-r16-realtime-reconnect-resync.md)
+
+## Next recommended task
+
+Prompts 28 and 29 are the next staged R16 briefs. They are not active until explicitly selected by the user or project lead.
+
+- [Prompt 28 — R16 Realtime Redis Failure, Backpressure, and Observability Acceptance](prompt-28-r16-realtime-failure-observability.md)
+- [Prompt 29 — R16 Production-Readiness Evidence Closeout](prompt-29-r16-production-readiness-closeout.md)
 
 ## Recommended naming
 

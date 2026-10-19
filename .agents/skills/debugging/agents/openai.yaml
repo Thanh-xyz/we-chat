@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Debugging"
+  short_description: "Prove the root cause before any fix"
+  default_prompt: "Use $debugging to find and prove the root cause of this failure."
