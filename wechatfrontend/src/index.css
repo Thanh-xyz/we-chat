@@ -130,7 +130,7 @@ button.connection-badge { cursor: pointer; }
 .message-bubble--recalled { color: var(--ink-600); background: var(--surface-recalled); font-style: italic; }
 .message-bubble p { margin: 0; font-size: .91rem; line-height: 1.48; white-space: pre-wrap; overflow-wrap: anywhere; }
 .message-bubble footer { margin-top: 4px; display: flex; align-items: center; justify-content: flex-end; gap: 5px; color: var(--ink-400); font-size: .62rem; }
-.message-row--mine .message-bubble footer { color: rgba(255,255,255,.68); }
+.message-row--mine .message-bubble footer { color: white; }
 .attachment-type { margin-bottom: 6px; display: flex; align-items: center; gap: 7px; font-size: .74rem; font-weight: 750; }
 .attachment-card { min-width: 210px; margin-top: 8px; padding: 9px; display: flex; align-items: center; gap: 8px; border-radius: 10px; background: var(--surface-attachment); }
 .attachment-card > span { display: grid; }

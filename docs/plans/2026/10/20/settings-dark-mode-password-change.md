@@ -8,6 +8,7 @@
 - Đầu vào: Scout và BA trong lượt hội thoại này; người dùng xác nhận phương án A và xác nhận dark mode áp dụng toàn website, gồm các trang auth.
 - Trạng thái: Kế hoạch chờ duyệt. Phê duyệt BA không phải phê duyệt bắt đầu COOK.
 
+
 ## 1. Mục tiêu và tiêu chí nghiệm thu
 
 ### Mục tiêu
