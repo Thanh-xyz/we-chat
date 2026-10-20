@@ -10,7 +10,7 @@ const INITIAL_FORM = { username: '', email: '', displayName: '', password: '' }
 export function RegisterPage() {
   const [form, setForm] = useState(INITIAL_FORM)
   const [error, setError] = useState('')
-  const [registeredEmail, setRegisteredEmail] = useState('')
+  const [registration, setRegistration] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const update = (field) => (event) => setForm((current) => ({ ...current, [field]: event.target.value }))
 
@@ -20,7 +20,7 @@ export function RegisterPage() {
     setError('')
     try {
       const result = await registerAccount(form)
-      setRegisteredEmail(result.email)
+      setRegistration(result)
     } catch (requestError) {
       setError(errorMessage(requestError))
     } finally {
@@ -28,10 +28,25 @@ export function RegisterPage() {
     }
   }
 
-  if (registeredEmail) {
+  if (registration) {
+    const verificationEmailSent = registration.verificationEmailSent
+    const statusTitle = verificationEmailSent === true
+      ? 'Kiểm tra email của bạn'
+      : 'Tài khoản đã được tạo'
+    const statusDescription = verificationEmailSent === true
+      ? `Liên kết xác minh đã được gửi đến ${registration.email}.`
+      : verificationEmailSent === false
+        ? 'Email xác thực chưa được gửi. Bạn có thể đăng nhập theo cấu hình hiện tại.'
+        : 'Nếu hệ thống yêu cầu xác minh, hãy làm theo hướng dẫn xác minh tài khoản.'
+    const statusMessage = verificationEmailSent === true
+      ? 'Tài khoản đã được tạo. Hãy xác minh email nếu máy chủ yêu cầu trước khi đăng nhập.'
+      : verificationEmailSent === false
+        ? 'Tính năng gửi email xác thực hiện đang tạm tắt.'
+        : 'Tài khoản đã được tạo.'
+
     return (
-      <AuthLayout eyebrow="Gần xong rồi" title="Kiểm tra email của bạn" description={`Liên kết xác minh đã được gửi đến ${registeredEmail}.`} footer={<Link to="/login">Quay lại đăng nhập</Link>}>
-        <FormAlert tone="success">Tài khoản đã được tạo. Hãy xác minh email nếu máy chủ yêu cầu trước khi đăng nhập.</FormAlert>
+      <AuthLayout eyebrow="Gần xong rồi" title={statusTitle} description={statusDescription} footer={<Link to="/login">Quay lại đăng nhập</Link>}>
+        <FormAlert tone="success">{statusMessage}</FormAlert>
       </AuthLayout>
     )
   }
