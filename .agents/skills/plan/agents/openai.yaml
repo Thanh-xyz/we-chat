@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Plan"
+  short_description: "Evidence-based plan with specialist routing"
+  default_prompt: "Use $plan to produce an approvable implementation plan for this scope."

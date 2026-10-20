@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat BA Analysis"
+  short_description: "Requirements and measurable acceptance criteria"
+  default_prompt: "Use $ba-analysis to turn this request into requirements and acceptance criteria."

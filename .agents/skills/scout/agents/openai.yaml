@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Scout"
+  short_description: "Read-only map of affected code and risks"
+  default_prompt: "Use $scout to map the code, contracts, and risks affected by this request."

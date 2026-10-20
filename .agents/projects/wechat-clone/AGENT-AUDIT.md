@@ -46,3 +46,25 @@ The supported locations and required fields were checked against the official [S
 ## Maintenance
 
 Update a skill when the repeated workflow or code contract changes. Update `PROJECT-CONTEXT.md` only after inspecting source. Keep historical prompts as records; write a new task brief or current user instruction for new work. Validate TOML parsing, skill frontmatter, referenced paths, and any scripts before distributing changes.
+
+## Update — 2026-10-19
+
+The inventory above is historical. The generic Agency catalog has since been removed from this checkout, and the repo skill set grew to 38 skills. A third-party ClaudeKit template (`skills-template/`) was studied as reference material only. Its Claude Code hooks, subagent dispatch, slash commands, auto-commit, and auto-chaining behavior were not adopted.
+
+- **Added skills:**
+  - `cook`: COOK stage execution loop, with references for test-first steps and for responding to findings.
+  - `debugging`: root cause before any fix, with a WeChat diagnostics map.
+  - `deployment-operations`: Dockerfiles, Compose, gateway, environment contract, runbooks.
+- **Added on-demand references:**
+  - `api-contract-design/references/rest-conventions.md`
+  - `backend-security/references/security-checklist.md`
+  - `database-migration/references/postgres-migration-safety.md`
+  - `sql-query-optimization/references/postgres-diagnostics.md`
+  - `frontend-engineering/references/react-performance.md`
+  - `frontend-ui-ux/references/accessibility-checklist.md`
+  - `testing/references/test-discipline.md`
+- **Codex UI metadata:** `agents/openai.yaml` (display name, short description, default prompt) for `scout`, `ba-analysis`, `plan`, `cook`, `testing`, `continuous-improvement-review`, and `debugging`. Implicit invocation stays at the Codex default.
+- **Verification:** skill discovery was checked with `codex debug prompt-input` (codex-cli 0.163.0), and frontmatter with the bundled `quick_validate.py`.
+- **Known limits:**
+  - Current Codex documentation states that `sandbox_mode` in a custom agent file is inherited from the parent session rather than overridden. The read-only reviewer and scout agents therefore rely on their instructions unless the session itself runs read-only.
+  - The `brainstorm` skill referenced by `plan` exists only at user level (`~/.codex/skills/brainstorm`), not in this repository.

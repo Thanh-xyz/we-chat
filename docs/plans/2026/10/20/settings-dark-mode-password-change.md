@@ -6,7 +6,8 @@
 - Owner COOK đề xuất: `wechat_project_lead`
 - Reviewer đề xuất: `wechat_code_reviewer`
 - Đầu vào: Scout và BA trong lượt hội thoại này; người dùng xác nhận phương án A và xác nhận dark mode áp dụng toàn website, gồm các trang auth.
-- Trạng thái: COOK, TEST và REVIEW hoàn tất. Review sửa tương phản màu sau lần chạy TEST; không chạy lại test suite theo lựa chọn D của người dùng.
+- Trạng thái: Kế hoạch chờ duyệt. Phê duyệt BA không phải phê duyệt bắt đầu COOK.
+
 
 ## 1. Mục tiêu và tiêu chí nghiệm thu
 

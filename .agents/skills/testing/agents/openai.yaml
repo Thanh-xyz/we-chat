@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Testing"
+  short_description: "Risk-based checks with real PASS/FAIL evidence"
+  default_prompt: "Use $testing to verify this change against its acceptance criteria."
