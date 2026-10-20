@@ -86,7 +86,11 @@ class AuthServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		authService = new AuthService(
+		authService = createAuthService(false);
+	}
+
+	private AuthService createAuthService(boolean requireEmailVerified) {
+		return new AuthService(
 				userRepository,
 				refreshTokenService,
 				passwordResetTokenRepository,
@@ -106,7 +110,8 @@ class AuthServiceTest {
 				auditLogService,
 				auditJsonWriter,
 				new RbacProperties("USER", "SUPER_ADMIN"),
-				new LoginSecurityProperties(5, Duration.ofMinutes(15), false, Duration.ofDays(1), Duration.ofMinutes(30), Duration.ofMinutes(5)));
+				new LoginSecurityProperties(5, Duration.ofMinutes(15), requireEmailVerified, Duration.ofDays(1), Duration.ofMinutes(30), Duration.ofMinutes(5)),
+				true);
 	}
 
 	@Test
@@ -157,7 +162,24 @@ class AuthServiceTest {
 		verify(refreshTokenService).create(eq(USER_ID), any(Instant.class), any());
 	}
 
+	@Test
+	void configuredEmailVerificationStillRejectsUnverifiedLogin() {
+		User unverifiedUser = activeUser(null, false);
+		when(userRepository.findByUsernameOrEmail("user@example.com")).thenReturn(Optional.of(unverifiedUser));
+		when(passwordEncoder.matches("correct-password", unverifiedUser.passwordHash())).thenReturn(true);
+
+		assertThatThrownBy(() -> createAuthService(true).login(
+				new LoginRequest("user@example.com", "correct-password"),
+				request()))
+				.isInstanceOfSatisfying(ApiException.class, exception ->
+						assertThat(exception.status()).isEqualTo(HttpStatus.FORBIDDEN));
+	}
+
 	private User activeUser(Instant lockedUntil) {
+		return activeUser(lockedUntil, true);
+	}
+
+	private User activeUser(Instant lockedUntil, boolean emailVerified) {
 		Instant now = Instant.now();
 		return new User(
 				USER_ID,
@@ -170,7 +192,7 @@ class AuthServiceTest {
 				"USER",
 				true,
 				"ACTIVE",
-				true,
+				emailVerified,
 				0,
 				null,
 				0,

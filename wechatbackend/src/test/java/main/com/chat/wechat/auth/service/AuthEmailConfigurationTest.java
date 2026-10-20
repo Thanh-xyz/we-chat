@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AuthEmailConfigurationTest {
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
@@ -60,6 +61,31 @@ class AuthEmailConfigurationTest {
 	}
 
 	@Test
+	void productionProfileStartsWithoutMailSettingsWhenEmailIsDisabled() {
+		contextRunner
+				.withPropertyValues("spring.profiles.active=prod", "app.auth.email-enabled=false")
+				.run(context -> {
+					assertThat(context).hasSingleBean(AuthEmailService.class);
+					assertThat(context.getBean(AuthEmailService.class)).isInstanceOf(DisabledAuthEmailService.class);
+					assertThat(context).doesNotHaveBean(JavaMailSender.class);
+					assertThat(context).doesNotHaveBean(AuthMailProperties.class);
+					assertThat(context).doesNotHaveBean(AuthEmailProperties.class);
+				});
+	}
+
+	@Test
+	void disabledProductionEmailServiceFailsClosedIfCalled() {
+		contextRunner
+				.withPropertyValues("spring.profiles.active=prod", "app.auth.email-enabled=false")
+				.run(context -> {
+					AuthEmailService service = context.getBean(AuthEmailService.class);
+					assertThatThrownBy(() -> service.sendVerificationEmail(null, "unused", null))
+							.isInstanceOf(IllegalStateException.class)
+							.hasMessage("Authentication email sending is disabled");
+				});
+	}
+
+	@Test
 	void productionProfileFailsFastWhenMailCredentialsAreMissing() {
 		contextRunner
 				.withPropertyValues(
@@ -87,7 +113,7 @@ class AuthEmailConfigurationTest {
 	}
 
 	@Configuration(proxyBeanMethods = false)
-	@Import({AuthMailConfiguration.class, LoggingAuthEmailService.class})
+	@Import({AuthMailConfiguration.class, DisabledAuthEmailService.class, LoggingAuthEmailService.class})
 	static class EmailConfiguration {
 	}
 }

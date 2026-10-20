@@ -29,6 +29,7 @@ import main.com.chat.wechat.role.repository.RoleRepository;
 import main.com.chat.wechat.role.repository.UserRoleRepository;
 import main.com.chat.wechat.user.model.User;
 import main.com.chat.wechat.user.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -47,6 +48,7 @@ import java.util.UUID;
 @Service
 public class AuthService {
 	private static final Logger LOGGER = LoggerFactory.getLogger(AuthService.class);
+	private static final String AUTH_EMAIL_DISABLED_MESSAGE = "Tính năng email hiện tạm thời không khả dụng.";
 
 	private final UserRepository userRepository;
 	private final RefreshTokenService refreshTokenService;
@@ -64,6 +66,7 @@ public class AuthService {
 	private final AuditJsonWriter auditJsonWriter;
 	private final RbacProperties rbacProperties;
 	private final LoginSecurityProperties loginSecurityProperties;
+	private final boolean authEmailEnabled;
 
 	public AuthService(
 			UserRepository userRepository,
@@ -81,7 +84,8 @@ public class AuthService {
 			AuditLogService auditLogService,
 			AuditJsonWriter auditJsonWriter,
 			RbacProperties rbacProperties,
-			LoginSecurityProperties loginSecurityProperties) {
+			LoginSecurityProperties loginSecurityProperties,
+			@Value("${app.auth.email-enabled:true}") boolean authEmailEnabled) {
 		this.userRepository = userRepository;
 		this.refreshTokenService = refreshTokenService;
 		this.passwordResetTokenRepository = passwordResetTokenRepository;
@@ -98,6 +102,7 @@ public class AuthService {
 		this.auditJsonWriter = auditJsonWriter;
 		this.rbacProperties = rbacProperties;
 		this.loginSecurityProperties = loginSecurityProperties;
+		this.authEmailEnabled = authEmailEnabled;
 	}
 
 	@Transactional
@@ -140,9 +145,13 @@ public class AuthService {
 		Role userRole = roleRepository.findByCode(defaultRoleCode)
 				.orElseThrow(() -> new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Default role is not configured"));
 		userRoleRepository.replace(user.id(), Set.of(userRole.id()), null, now);
-		issueEmailVerification(user, now);
+		boolean verificationEmailSent = false;
+		if (authEmailEnabled) {
+			issueEmailVerification(user, now);
+			verificationEmailSent = true;
+		}
 		auditLogService.logSuccess("USER_CREATE", "USER", user.id().toString(), null, auditJsonWriter.write(new RegisterAuditValue(username)));
-		return new RegisterResponse(user.id(), user.email(), user.emailVerified());
+		return new RegisterResponse(user.id(), user.email(), user.emailVerified(), verificationEmailSent);
 	}
 
 	@Transactional
@@ -237,6 +246,7 @@ public class AuthService {
 
 	@Transactional
 	public void forgotPassword(ForgotPasswordRequest request) {
+		ensureAuthEmailEnabled();
 		String email = request.email().trim().toLowerCase(Locale.ROOT);
 		userRepository.findByEmail(email)
 				.filter(User::active)
@@ -315,6 +325,7 @@ public class AuthService {
 
 	@Transactional
 	public void resendVerification(ResendVerificationRequest request) {
+		ensureAuthEmailEnabled();
 		String email = request.email().trim().toLowerCase(Locale.ROOT);
 		userRepository.findByEmail(email)
 				.filter(User::active)
@@ -377,6 +388,12 @@ public class AuthService {
 				loginSecurityProperties.emailVerificationTokenTtl(),
 				ZoneId.systemDefault());
 		authEmailService.sendVerificationEmail(user, rawToken, expiresAt);
+	}
+
+	private void ensureAuthEmailEnabled() {
+		if (!authEmailEnabled) {
+			throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, AUTH_EMAIL_DISABLED_MESSAGE);
+		}
 	}
 
 	private String hashPrefix(String tokenHash) {
