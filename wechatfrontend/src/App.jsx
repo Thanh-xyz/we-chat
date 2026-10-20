@@ -8,6 +8,7 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage.jsx'
 import { LoginPage } from './pages/LoginPage.jsx'
 import { RegisterPage } from './pages/RegisterPage.jsx'
 import { ResetPasswordPage } from './pages/ResetPasswordPage.jsx'
+import { SettingsPage } from './pages/SettingsPage.jsx'
 import { VerifyEmailPage } from './pages/VerifyEmailPage.jsx'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
         <Route path="/app" element={<ChatPage />} />
         <Route path="/app/chat/:conversationId" element={<ChatPage />} />
         <Route path="/app/contacts" element={<ContactsPage />} />
+        <Route path="/app/settings" element={<SettingsPage />} />
       </Route>
       <Route path="/" element={<Navigate to="/app" replace />} />
       <Route path="*" element={<Navigate to="/app" replace />} />
