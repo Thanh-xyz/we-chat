@@ -25,12 +25,12 @@ export function ForgotPasswordPage() {
   }
 
   return (
-    <AuthLayout eyebrow="Khôi phục tài khoản" title="Quên mật khẩu?" description="Nhập email để nhận liên kết đặt lại mật khẩu." footer={<Link to="/login">Quay lại đăng nhập</Link>}>
+    <AuthLayout eyebrow="Khôi phục tài khoản" title="Quên mật khẩu?" description="Nhập email để yêu cầu liên kết đặt lại mật khẩu." footer={<Link to="/login">Quay lại đăng nhập</Link>}>
       {sent ? <FormAlert tone="success">Nếu email tồn tại, hướng dẫn đặt lại mật khẩu đã được gửi.</FormAlert> : (
         <form className="auth-form" onSubmit={submit}>
           <FormAlert>{error}</FormAlert>
           <label className="field" htmlFor="email"><span>Email</span><input id="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required autoFocus /></label>
-          <button className="primary-button" disabled={submitting}>{submitting ? 'Đang gửi…' : 'Gửi liên kết'}</button>
+          <button className="primary-button" disabled={submitting}>{submitting ? 'Đang gửi…' : 'Yêu cầu liên kết'}</button>
         </form>
       )}
     </AuthLayout>

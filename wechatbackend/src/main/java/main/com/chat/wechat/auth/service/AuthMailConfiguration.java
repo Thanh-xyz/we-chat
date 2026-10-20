@@ -1,6 +1,7 @@
 package main.com.chat.wechat.auth.service;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -11,6 +12,7 @@ import java.util.Properties;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("prod | (!local & !test)")
+@ConditionalOnProperty(prefix = "app.auth", name = "email-enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties({AuthMailProperties.class, AuthEmailProperties.class})
 public class AuthMailConfiguration {
 	@Bean

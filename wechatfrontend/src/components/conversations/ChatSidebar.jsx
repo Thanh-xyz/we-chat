@@ -1,4 +1,4 @@
-import { Bell, LogOut, MessageCircleMore, Search, Users } from 'lucide-react'
+import { Bell, LogOut, MessageCircleMore, Search, Settings, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../common/Avatar.jsx'
@@ -53,6 +53,9 @@ export function ChatSidebar({
           </button>
           <button className="icon-button" type="button" onClick={() => navigate('/app/contacts')} aria-label="Mở danh bạ" title="Danh bạ">
             <Users size={19} />
+          </button>
+          <button className="icon-button" type="button" onClick={() => navigate('/app/settings')} aria-label="Mở cài đặt" title="Cài đặt">
+            <Settings size={19} />
           </button>
           <button className="icon-button" type="button" onClick={onLogout} aria-label="Đăng xuất" title="Đăng xuất">
             <LogOut size={19} />

@@ -1,6 +1,6 @@
 ---
 name: plan
-description: "Turn an approved WeChat requirement, BA analysis, or Scout report into an evidence-backed, file-level implementation plan with dependencies, verification, risks, rollback, and a manual handoff. Use before implementation; never modify files or invoke another Skill automatically."
+description: "Turn an approved WeChat requirement, BA analysis, or Scout report into an evidence-backed, file-level implementation plan saved as Markdown under docs/plans by date, with dependencies, verification, risks, rollback, and a manual handoff. Use before implementation; never modify application files or invoke another Skill automatically."
 ---
 
 # WeChat implementation planning
@@ -17,7 +17,7 @@ The plan explains:
 - the ordered implementation tasks and their dependencies;
 - the testing, rollout, operational, and rollback strategy.
 
-This Skill plans implementation. It does not implement code, modify project files, invoke another Skill, or start an agent automatically.
+This Skill plans implementation and saves the complete plan as a Markdown artifact in the repository. It does not implement application changes, invoke another Skill, or start an agent automatically.
 
 ## Use this Skill for
 
@@ -37,9 +37,10 @@ Use `scout` for broad reconnaissance, `ba-analysis` for unresolved business requ
 4. Read the current request and any supplied Scout or BA report before repeating discovery.
 5. Inspect the actual source, tests, configuration, and relevant documentation.
 
-Planning is read-only by default. Do not:
+The only project-file write allowed during planning is the plan artifact described below. Do not:
 
-- modify application code, tests, migrations, configuration, documentation, or Skill files;
+- modify application code, tests, migrations, configuration, existing documentation, or Skill files;
+- overwrite or edit an existing plan artifact;
 - create helper scripts, agents, or additional Skills;
 - install packages or change system configuration;
 - modify databases, buckets, containers, volumes, or deployed services;
@@ -47,6 +48,18 @@ Planning is read-only by default. Do not:
 - reset Git state, discard changes, weaken authorization, or expose secrets.
 
 Safe read-only inspection and proportionate checks are allowed. Report commands actually run and classify results as `PASS`, `FAIL`, `SKIPPED`, or `BLOCKED`. Never claim the plan was implemented or tested.
+
+## Plan artifact and chat response
+
+Save each completed plan as a new Markdown file under:
+
+```text
+docs/plans/YYYY/MM/DD/<short-task-slug>.md
+```
+
+Use the current date from the user's/session's local time context for the year, month, and day folders. Use a short descriptive kebab-case filename. Create missing date folders as needed. Never overwrite an existing file; if the chosen filename exists, add a numeric suffix such as `-2` and check again. Preserve all other working-tree changes.
+
+Write the complete plan in Vietnamese, including checks performed during PLAN, specialist routing, approval gates, and manual handoff. Keep technical identifiers, code symbols, API paths, commands, and skill names in their canonical form, and explain them in Vietnamese. Verify that the file was written before responding. In chat, do not reproduce or summarize any plan section: provide only a Markdown link to the saved file and one concise Vietnamese sentence stating the recommended next step from its handoff. Wait for the user's explicit decision; do not start the next workflow stage automatically.
 
 ## Evidence rules
 
@@ -169,7 +182,7 @@ Address applicable concerns: backward compatibility, authorization, data integri
 
 ## Required plan structure
 
-Produce a proportional report with:
+Write a proportional report in the plan artifact with:
 
 1. Objective and acceptance criteria
 2. Scope and non-goals
@@ -214,11 +227,11 @@ The plan is ready for approval when:
   - a verification matrix mapping each criterion to its owner and its check;
   - a list of approval gates;
 - assumptions and open questions are visible;
-- no project file was modified during planning.
+- no project file other than this new plan artifact was modified during planning.
 
 ## Manual handoff
 
-After presenting the plan, provide exactly these choices:
+In the plan artifact, provide exactly these choices:
 
 **A — Approve plan:** wait for explicit approval of all four PLAN deliverables before COOK or any other implementation workflow begins.
 

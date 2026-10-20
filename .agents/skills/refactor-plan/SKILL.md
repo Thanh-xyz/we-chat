@@ -1,6 +1,6 @@
 ---
 name: refactor-plan
-description: Create evidence-based, incremental refactoring plans for the WeChat Clone repository. Use after architecture review or when restructuring directories, modules, dependencies, configuration, or infrastructure layout. Define scope, file mappings, dependency order, risks, acceptance criteria, verification commands, and rollback steps before implementation. Planning only; do not modify project files.
+description: Create evidence-based, incremental refactoring plans for the WeChat Clone repository and save them as Markdown under docs/plans by date. Use after architecture review or when restructuring directories, modules, dependencies, configuration, or infrastructure layout. Define scope, file mappings, dependency order, risks, acceptance criteria, verification commands, and rollback steps before implementation. Do not modify application files.
 ---
 
 # Refactor Plan — WeChat Clone
@@ -11,7 +11,7 @@ Translate verified architecture findings into an actionable, low-risk refactorin
 
 The goal is to improve repository structure, module boundaries, and maintainability without accidentally changing application behavior or breaking builds and deployments.
 
-This skill plans changes. It does not execute the refactor.
+This skill plans changes and saves the complete refactoring plan as a Markdown artifact in the repository. It does not execute the refactor.
 
 Priorities:
 1. Use evidence from the actual repository.
@@ -173,24 +173,37 @@ Identify natural review and recovery checkpoints for each phase.
 
 ## 10. Approval and execution boundaries
 
-This skill is planning-only.
+This skill is planning-only. Its only permitted project-file write is the new plan artifact described below.
 
-- Do not edit, create, delete, move, or rename project files.
+- Do not edit application files, existing documentation, or any project file other than the new plan artifact.
+- Do not overwrite or edit an existing plan artifact.
 - Do not install dependencies or skills.
 - Do not run deployment or change external infrastructure.
 - Do not modify environment variables, secrets, sandbox policy, or approval policy.
 - Do not execute destructive Git operations.
 - Do not silently expand the agreed scope.
 
-Present the plan and wait for approval before implementation.
+Include an explicit approval handoff in the saved plan artifact and wait for approval before implementation.
 
 Approval of the overall direction does not automatically authorize every optional change or unrelated migration.
 
 If the user explicitly asks to implement a particular phase, hand off to an appropriate implementation workflow and remain within the approved scope.
 
+## Plan artifact and chat response
+
+Save each completed refactoring plan as a new Markdown file under:
+
+```text
+docs/plans/YYYY/MM/DD/<short-task-slug>.md
+```
+
+Use the current date from the user's/session's local time context for the year, month, and day folders. Use a short descriptive kebab-case filename. Create missing date folders as needed. Never overwrite an existing file; if the chosen filename exists, add a numeric suffix such as `-2` and check again. Preserve all other working-tree changes.
+
+Write the complete plan in Vietnamese, including evidence, path mappings, phases, risks, verification, approval gates, and handoff. Keep technical identifiers, code symbols, paths, commands, and skill names in their canonical form, and explain them in Vietnamese. Verify that the file was written before responding. In chat, do not reproduce or summarize any plan section: provide only a Markdown link to the saved file and one concise Vietnamese sentence stating the recommended next step. Wait for the user's explicit decision; do not start implementation automatically.
+
 ## 11. Required deliverable
 
-Produce a refactoring plan containing:
+Write a refactoring plan in the plan artifact containing:
 
 1. Executive summary and intended outcome.
 2. Current-state evidence and relevant audit findings.
@@ -206,4 +219,4 @@ Produce a refactoring plan containing:
 
 Finish by recommending the smallest safe first phase.
 
-Do not start implementing the plan.
+Do not start implementing the plan. In chat, only link the saved artifact and state the recommended next step; do not repeat the plan contents.
