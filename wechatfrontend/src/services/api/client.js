@@ -3,6 +3,7 @@ import {
   clearSession,
   getAccessToken,
   getRefreshToken,
+  hasUsableAccessToken,
   setSession,
 } from '../auth/tokenStorage.js'
 import { normalizeApiError } from './errors.js'
@@ -17,9 +18,23 @@ export const apiClient = axios.create({
 
 let refreshPromise = null
 
+function expireSession() {
+  clearSession()
+  window.dispatchEvent(new Event('wechat:session-expired'))
+}
+
+function sessionChangedError() {
+  const error = new Error('Session changed while refreshing credentials')
+  error.code = 'SESSION_CHANGED'
+  return error
+}
+
 export async function refreshAccessToken() {
   const refreshToken = getRefreshToken()
-  if (!refreshToken) throw normalizeApiError({ response: { status: 401 } })
+  if (!refreshToken) {
+    expireSession()
+    throw normalizeApiError({ response: { status: 401 } })
+  }
 
   if (!refreshPromise) {
     refreshPromise = axios
@@ -29,14 +44,29 @@ export async function refreshAccessToken() {
         { timeout: 15_000, headers: { 'Content-Type': 'application/json' } },
       )
       .then(({ data }) => {
+        if (getRefreshToken() !== refreshToken) throw sessionChangedError()
         setSession(data)
         return data.accessToken
+      })
+      .catch((error) => {
+        if (error?.code !== 'SESSION_CHANGED') expireSession()
+        throw error
       })
       .finally(() => {
         refreshPromise = null
       })
   }
   return refreshPromise
+}
+
+export async function getUsableAccessToken() {
+  const token = getAccessToken()
+  if (token && hasUsableAccessToken()) return token
+  try {
+    return await refreshAccessToken()
+  } catch (error) {
+    throw normalizeApiError(error)
+  }
 }
 
 apiClient.interceptors.request.use((config) => {
@@ -64,8 +94,7 @@ apiClient.interceptors.response.use(
         request.headers.Authorization = `Bearer ${token}`
         return apiClient(request)
       } catch {
-        clearSession()
-        window.dispatchEvent(new Event('wechat:session-expired'))
+        // refreshAccessToken already expires the shared session.
       }
     }
     throw normalizeApiError(error)

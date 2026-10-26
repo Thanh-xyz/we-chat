@@ -16,6 +16,7 @@ function updateConversationActivity(conversations, conversationId, occurredAt) {
 
 export const useChatStore = create((set, get) => ({
   conversations: [],
+  conversationQuery: '',
   conversationStatus: 'idle',
   conversationError: null,
   conversationRequestId: 0,
@@ -27,7 +28,7 @@ export const useChatStore = create((set, get) => ({
 
   loadConversations: async ({ signal, query = '' } = {}) => {
     const requestId = get().conversationRequestId + 1
-    set({ conversationRequestId: requestId, conversationStatus: 'loading', conversationError: null })
+    set({ conversationQuery: query, conversationRequestId: requestId, conversationStatus: 'loading', conversationError: null })
     try {
       const conversations = await conversationApi.list({ signal, query })
       if (get().conversationRequestId !== requestId) return conversations
@@ -210,6 +211,7 @@ export const useChatStore = create((set, get) => ({
     typingTimers.clear()
     set({
       conversations: [],
+      conversationQuery: '',
       conversationStatus: 'idle',
       conversationError: null,
       conversationRequestId: 0,

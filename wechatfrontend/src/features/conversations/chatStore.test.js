@@ -63,6 +63,7 @@ describe('chat store cursor and realtime flow', () => {
     await firstSearch
 
     expect(useChatStore.getState().conversations).toEqual([{ id: 'new' }])
+    expect(useChatStore.getState().conversationQuery).toBe('new')
     expect(useChatStore.getState().conversationStatus).toBe('success')
   })
 })

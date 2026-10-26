@@ -16,67 +16,123 @@ export class WebSocketManager {
     this.client = null
     this.subscriptions = []
     this.reconnectAttempt = 0
+    this.reconnectTimer = null
+    this.restartPromise = null
+    this.generation = 0
+    this.hasConnected = false
     this.desired = false
     this.options = null
   }
 
   connect(options) {
-    if (this.desired || this.client?.connected) return
+    if (this.desired || this.client?.connected) return Promise.resolve()
     this.options = options
     this.desired = true
+    this.reconnectAttempt = 0
+    this.hasConnected = false
+    const generation = ++this.generation
     this.options.onState('connecting')
-    this.createClient()
-    this.client.activate()
+    return this.startClient(generation)
   }
 
-  createClient() {
-    this.client = this.clientFactory({
+  async startClient(generation) {
+    const options = this.options
+    if (!this.isCurrentGeneration(generation, options)) return
+
+    let token
+    try {
+      token = await options.getAccessToken()
+      if (!token) throw new Error('Missing access token')
+    } catch {
+      if (this.isCurrentGeneration(generation, options)) {
+        this.desired = false
+        options.onState('offline')
+      }
+      return
+    }
+
+    if (!this.isCurrentGeneration(generation, options)) return
+
+    const client = this.clientFactory({
       brokerURL: resolveWebSocketUrl(),
       connectionTimeout: 10_000,
       heartbeatIncoming: 10_000,
       heartbeatOutgoing: 10_000,
-      reconnectDelay: BACKOFF_DELAYS[0],
+      reconnectDelay: 0,
+      connectHeaders: { Authorization: `Bearer ${token}` },
       debug: () => {},
     })
-    this.client.beforeConnect = () => {
-      const token = this.options.getAccessToken()
-      if (!token) throw new Error('Missing access token')
-      this.client.connectHeaders = { Authorization: `Bearer ${token}` }
-      if (this.reconnectAttempt > 0) this.options.onState('reconnecting')
-    }
-    this.client.onConnect = () => {
-      this.reconnectAttempt = 0
-      this.client.reconnectDelay = BACKOFF_DELAYS[0]
-      this.options.onState('connected')
-      this.restoreSubscriptions()
-      this.options.onConnected?.()
-    }
-    this.client.onStompError = () => this.options.onState('offline')
-    this.client.onWebSocketError = () => this.options.onState('reconnecting')
-    this.client.onWebSocketClose = () => {
-      this.clearSubscriptions()
-      if (!this.desired) return
-      this.reconnectAttempt += 1
-      if (this.reconnectAttempt > BACKOFF_DELAYS.length) {
-        this.client.reconnectDelay = 0
-        this.options.onState('offline')
-        return
-      }
-      this.client.reconnectDelay = BACKOFF_DELAYS[this.reconnectAttempt - 1]
-      this.options.onState('reconnecting')
-    }
+    this.client = client
+    this.bindClient(client, generation, options)
+    client.activate()
   }
 
-  restoreSubscriptions() {
+  bindClient(client, generation, options) {
+    let closeHandled = false
+    const handleClose = () => {
+      if (closeHandled) return
+      closeHandled = true
+      this.handleClientClose(client, generation, options)
+    }
+
+    client.onConnect = () => {
+      if (!this.isCurrentClient(client, generation, options)) return
+      const reconnected = this.hasConnected || this.reconnectAttempt > 0
+      this.hasConnected = true
+      this.reconnectAttempt = 0
+      this.cancelReconnectTimer()
+      options.onState('connected')
+      this.restoreSubscriptions(client, generation, options)
+      try {
+        Promise.resolve(options.onConnected?.({ reconnected })).catch(() => {})
+      } catch {
+        // Connection state must not depend on optional resynchronization work.
+      }
+    }
+    client.onStompError = () => {
+      if (!this.isCurrentClient(client, generation, options)) return
+      Promise.resolve()
+        .then(() => client.deactivate({ force: true }))
+        .then(handleClose, handleClose)
+    }
+    client.onWebSocketError = () => {}
+    client.onWebSocketClose = handleClose
+  }
+
+  handleClientClose(client, generation, options) {
+    if (!this.isCurrentClient(client, generation, options)) return
+    this.clearSubscriptions()
+    this.client = null
+    if (!this.desired) return
+
+    if (this.reconnectAttempt >= BACKOFF_DELAYS.length) {
+      this.desired = false
+      options.onState('offline')
+      return
+    }
+
+    const delay = BACKOFF_DELAYS[this.reconnectAttempt]
+    this.reconnectAttempt += 1
+    options.onState('reconnecting')
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      if (!this.isCurrentGeneration(generation, options)) return
+      void this.startClient(generation)
+    }, delay)
+  }
+
+  restoreSubscriptions(client, generation, options) {
     this.clearSubscriptions()
     this.subscriptions = [
-      this.client.subscribe('/user/queue/conversation-events', (frame) => {
+      client.subscribe('/user/queue/conversation-events', (frame) => {
+        if (!this.isCurrentClient(client, generation, options)) return
         const event = this.parseFrame(frame)
-        if (event) this.options.onConversationEvent(event)
+        if (event) options.onConversationEvent(event)
       }),
-      this.client.subscribe(`/topic/users/${this.options.userId}/notifications`, (frame) => {
+      client.subscribe(`/topic/users/${options.userId}/notifications`, (frame) => {
+        if (!this.isCurrentClient(client, generation, options)) return
         const event = this.parseFrame(frame)
-        if (event) this.options.onNotificationEvent(event)
+        if (event) options.onNotificationEvent(event)
       }),
     ]
   }
@@ -100,37 +156,68 @@ export class WebSocketManager {
   }
 
   retry() {
-    if (!this.options || this.client?.connected) return
-    this.desired = false
+    if (!this.options || this.client?.connected) return Promise.resolve()
+    if (this.restartPromise) return this.restartPromise
+
+    const options = this.options
+    const generation = ++this.generation
     const previousClient = this.client
-    Promise.resolve(previousClient?.deactivate({ force: true })).finally(() => {
-      this.reconnectAttempt = 0
-      this.desired = true
-      this.options.onState('connecting')
-      this.createClient()
-      this.client.activate()
-    })
+    this.desired = true
+    this.reconnectAttempt = 0
+    this.cancelReconnectTimer()
+    this.clearSubscriptions()
+    this.client = null
+    options.onState('connecting')
+
+    const restartPromise = this.deactivateClient(previousClient)
+      .then(() => this.startClient(generation))
+      .finally(() => {
+        if (this.restartPromise === restartPromise) this.restartPromise = null
+      })
+    this.restartPromise = restartPromise
+    return restartPromise
   }
 
   disconnect() {
-    this.desired = false
-    this.clearSubscriptions()
-    this.options?.onState('offline')
     const client = this.client
+    const options = this.options
+    this.generation += 1
+    this.desired = false
+    this.reconnectAttempt = 0
+    this.cancelReconnectTimer()
+    this.clearSubscriptions()
     this.client = null
     this.options = null
-    if (client) {
-      client.onWebSocketClose = () => {}
-      client.onWebSocketError = () => {}
-      client.onStompError = () => {}
-      return client.deactivate({ force: true })
+    this.restartPromise = null
+    options?.onState('offline')
+    return this.deactivateClient(client)
+  }
+
+  deactivateClient(client) {
+    if (!client) return Promise.resolve()
+    try {
+      return Promise.resolve(client.deactivate({ force: true })).catch(() => {})
+    } catch {
+      return Promise.resolve()
     }
-    return Promise.resolve()
+  }
+
+  cancelReconnectTimer() {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer)
+    this.reconnectTimer = null
   }
 
   clearSubscriptions() {
     this.subscriptions.forEach((subscription) => subscription?.unsubscribe())
     this.subscriptions = []
+  }
+
+  isCurrentGeneration(generation, options) {
+    return this.desired && this.generation === generation && this.options === options
+  }
+
+  isCurrentClient(client, generation, options) {
+    return this.client === client && this.isCurrentGeneration(generation, options)
   }
 }
 

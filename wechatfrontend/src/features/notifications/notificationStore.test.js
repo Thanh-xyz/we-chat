@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const notificationApi = vi.hoisted(() => ({ markRead: vi.fn(), markAllRead: vi.fn() }))
+const notificationApi = vi.hoisted(() => ({ list: vi.fn(), markRead: vi.fn(), markAllRead: vi.fn() }))
 vi.mock('../../services/api/notificationApi.js', () => ({ notificationApi }))
 
 import { useNotificationStore } from './notificationStore.js'
@@ -25,6 +25,20 @@ describe('notification store', () => {
 
     expect(useNotificationStore.getState().unreadCount).toBe(2)
     expect(useNotificationStore.getState().notifications).toHaveLength(1)
+  })
+
+  it('replaces persisted notification state when reloaded', async () => {
+    notificationApi.list.mockResolvedValue({
+      notifications: [{ id: 'n2', title: 'Persisted notification', read: false }],
+      unreadCount: 3,
+    })
+
+    await useNotificationStore.getState().load()
+
+    expect(useNotificationStore.getState().notifications).toEqual([
+      { id: 'n2', title: 'Persisted notification', read: false },
+    ])
+    expect(useNotificationStore.getState().unreadCount).toBe(3)
   })
 
   it('marks one notification read without underflowing unread count', async () => {
