@@ -80,6 +80,14 @@ export function useChatPageController() {
     () => setNotificationPanel(!notificationPanel),
     [notificationPanel, setNotificationPanel],
   )
+  const closeNotifications = useCallback(
+    () => setNotificationPanel(false),
+    [setNotificationPanel],
+  )
+  const handleLoadNotifications = useCallback(
+    (signal) => loadNotifications({ signal }),
+    [loadNotifications],
+  )
 
   useEffect(() => {
     connectRealtime(user.id)
@@ -134,7 +142,8 @@ export function useChatPageController() {
       onLogout: handleLogout,
       onRetryConnection: retryRealtime,
       onToggleNotifications: toggleNotifications,
-      onLoadNotifications: (signal) => loadNotifications({ signal }),
+      onCloseNotifications: closeNotifications,
+      onLoadNotifications: handleLoadNotifications,
       onReadNotification: markNotificationRead,
       onReadAllNotifications: markAllNotificationsRead,
       onRemoveNotification: removeNotification,

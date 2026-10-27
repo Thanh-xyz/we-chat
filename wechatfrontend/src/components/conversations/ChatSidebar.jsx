@@ -1,6 +1,6 @@
 import { Bell, LogOut, MessageCircleMore, Search, Settings, Users } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Avatar } from '../common/Avatar.jsx'
 import { ConnectionBadge } from '../common/ConnectionBadge.jsx'
 import { ConversationList } from './ConversationList.jsx'
@@ -22,12 +22,15 @@ export function ChatSidebar({
   onLogout,
   onRetryConnection,
   onToggleNotifications,
+  onCloseNotifications,
   onLoadNotifications,
   onReadNotification,
   onReadAllNotifications,
   onRemoveNotification,
 }) {
   const [query, setQuery] = useState('')
+  const notificationTriggerRef = useRef(null)
+  const location = useLocation()
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -39,6 +42,10 @@ export function ChatSidebar({
     }
   }, [onSearch, query])
 
+  useEffect(() => {
+    return () => onCloseNotifications()
+  }, [location.pathname, onCloseNotifications])
+
   return (
     <aside className={`chat-sidebar ${activeId ? 'has-mobile-selection' : ''}`}>
       <header className="sidebar-header">
@@ -47,7 +54,7 @@ export function ChatSidebar({
           <strong>ChatSpace</strong>
         </div>
         <div className="sidebar-actions">
-          <button type="button" className="notification-indicator" title={`${notificationUnread} thông báo chưa đọc`} onClick={onToggleNotifications} aria-label="Mở thông báo">
+          <button ref={notificationTriggerRef} type="button" className="notification-indicator" title={`${notificationUnread} thông báo chưa đọc`} onClick={onToggleNotifications} aria-label="Mở thông báo" aria-expanded={notificationPanel} aria-haspopup="dialog">
             <Bell size={19} />
             {notificationUnread > 0 && <span>{notificationUnread > 9 ? '9+' : notificationUnread}</span>}
           </button>
@@ -62,7 +69,7 @@ export function ChatSidebar({
           </button>
         </div>
       </header>
-      {notificationPanel && <NotificationPanel {...notificationData} onClose={onToggleNotifications} onLoad={onLoadNotifications} onRead={onReadNotification} onReadAll={onReadAllNotifications} onRemove={onRemoveNotification} />}
+      {notificationPanel && <NotificationPanel {...notificationData} triggerRef={notificationTriggerRef} onClose={onCloseNotifications} onLoad={onLoadNotifications} onRead={onReadNotification} onReadAll={onReadAllNotifications} onRemove={onRemoveNotification} />}
 
       <div className="profile-strip">
         <Avatar name={user.displayName || user.username} src={user.avatarUrl} />

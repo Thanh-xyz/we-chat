@@ -211,7 +211,7 @@ button.connection-badge { cursor: pointer; }
 }
 
 /* Notifications */
-.notification-panel { position: absolute; top: 62px; right: 18px; z-index: 10; width: min(365px, calc(100vw - 28px)); max-height: min(540px, calc(100vh - 86px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--paper); box-shadow: var(--shadow-lg); }
+.notification-panel { position: absolute; top: 12px; left: calc(100% + 12px); z-index: 10; width: min(365px, calc(100vw - 394px)); max-height: min(540px, calc(100vh - 24px)); display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 17px; background: var(--paper); box-shadow: var(--shadow-lg); }
 .notification-panel header { padding: 14px 14px 11px; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); }
 .notification-panel header > div:first-child { display: grid; gap: 3px; }
 .notification-panel header strong { font-size: .9rem; }
@@ -230,7 +230,8 @@ button.connection-badge { cursor: pointer; }
 .notification-item.is-unread .notification-dot { background: var(--brand-600); }
 .notification-delete { margin: 8px 8px 0 0; opacity: .6; }
 .panel-state { padding: 28px 18px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--ink-600); font-size: .78rem; text-align: center; }
-.panel-state--error { color: var(--danger); }
+.panel-state--error { flex-direction: column; color: var(--danger); }
+.panel-retry { min-height: 34px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-size: .72rem; }
 
 /* Contacts */
 .contacts-page { min-height: 100vh; background: var(--canvas); }
@@ -265,7 +266,7 @@ button.connection-badge { cursor: pointer; }
   .contacts-toolbar { align-items: stretch; flex-direction: column; }
   .contacts-search, .request-message { width: 100%; }
   .contacts-body { padding-inline: 13px; }
-  .notification-panel { top: 59px; right: 9px; }
+  .notification-panel { position: fixed; top: 66px; left: 10px; right: 10px; width: auto; max-height: calc(100dvh - 76px); }
 }
 
 /* Settings */

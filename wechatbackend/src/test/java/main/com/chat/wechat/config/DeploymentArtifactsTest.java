@@ -95,6 +95,15 @@ class DeploymentArtifactsTest {
 	}
 
 	@Test
+	void vercelRoutesClientSidePathsToTheSpaEntryPoint() throws IOException {
+		String vercelConfig = read("wechatfrontend/vercel.json");
+
+		assertThat(vercelConfig).contains(
+				"\"source\": \"/(.*)\"",
+				"\"destination\": \"/index.html\"");
+	}
+
+	@Test
 	void exampleEnvironmentAndBuildContextDoNotContainSecretValues() throws IOException {
 		String environment = read(".env.example");
 		String dockerignore = read(".dockerignore");

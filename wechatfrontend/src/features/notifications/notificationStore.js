@@ -31,7 +31,10 @@ export const useNotificationStore = create((set, get) => ({
     } catch (error) {
       const normalized = normalizeApiError(error)
       if (get().notificationRequestId !== requestId) return null
-      if (normalized.code === 'REQUEST_CANCELED') return null
+      if (normalized.code === 'REQUEST_CANCELED') {
+        set((state) => ({ status: state.notifications.length ? 'success' : 'idle', error: null }))
+        return null
+      }
       set({ status: 'error', error: normalized })
       throw normalized
     }
