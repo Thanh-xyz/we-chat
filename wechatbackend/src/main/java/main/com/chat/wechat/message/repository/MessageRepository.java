@@ -73,6 +73,25 @@ public class MessageRepository {
 		}
 	}
 
+	public Map<UUID, Message> findByIds(Collection<UUID> ids) {
+		if (ids == null || ids.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		List<UUID> uniqueIds = ids.stream().distinct().toList();
+		Map<UUID, Message> result = new LinkedHashMap<>();
+		jdbcTemplate.query("""
+				select *
+				from messages
+				where id in (%s) and deleted_at is null
+				""".formatted(placeholders(uniqueIds.size())),
+				(RowCallbackHandler) rs -> {
+					Message message = mapMessage(rs);
+					result.put(message.id(), message);
+				},
+				uniqueIds.toArray());
+		return result;
+	}
+
 	public boolean existsInConversation(UUID messageId, UUID conversationId) {
 		Integer count = jdbcTemplate.queryForObject("""
 				select count(*)

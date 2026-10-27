@@ -13,7 +13,6 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -77,7 +76,7 @@ public class ConversationRepository {
 		if (query == null || query.isBlank()) {
 			return Collections.emptyList();
 		}
-		String normalizedQuery = "%" + query.trim().toLowerCase(Locale.ROOT) + "%";
+		String normalizedQuery = "%" + query.trim() + "%";
 		return jdbcTemplate.query("""
 				select id, type, name, avatar_url, created_by, last_message_id,
 				       last_message_at, deleted_at, created_at, updated_at
@@ -97,10 +96,11 @@ public class ConversationRepository {
 				    where c.deleted_at is null
 				      and (? = true or actor_member.archived_at is null)
 				      and (
-				          (c.type = 'GROUP' and lower(c.name) like ?)
-				          or lower(u.username) like ?
-				          or lower(u.email) like ?
-				          or lower(u.display_name) like ?
+				          (c.type = 'GROUP' and public.chatspace_search_normalize(c.name) like public.chatspace_search_normalize(?))
+				          or ((c.type = 'GROUP' or cm.user_id <> ?)
+				              and public.chatspace_search_normalize(u.username) like public.chatspace_search_normalize(?))
+				          or ((c.type = 'GROUP' or cm.user_id <> ?)
+				              and public.chatspace_search_normalize(u.display_name) like public.chatspace_search_normalize(?))
 				      )
 				    order by c.id, actor_member.pinned_at desc nulls last,
 				             c.last_message_at desc nulls last, c.updated_at desc
@@ -108,7 +108,7 @@ public class ConversationRepository {
 				order by actor_pinned_at desc nulls last,
 				         last_message_at desc nulls last, updated_at desc
 				limit ? offset ?
-				""", rowMapper(), userId, includeArchived, normalizedQuery, normalizedQuery, normalizedQuery, normalizedQuery, limit, offset);
+				""", rowMapper(), userId, includeArchived, normalizedQuery, userId, normalizedQuery, userId, normalizedQuery, limit, offset);
 	}
 
 	public Optional<Conversation> findDirectByPair(UUID userLowId, UUID userHighId) {

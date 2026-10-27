@@ -15,8 +15,21 @@ function updateConversationActivity(conversations, conversationId, occurredAt) {
   ))
 }
 
+function mergeConversationMap(current, conversations) {
+  return conversations.reduce((result, conversation) => ({
+    ...result,
+    [conversation.id]: { ...result[conversation.id], ...conversation },
+  }), current)
+}
+
+function updateConversationMap(current, conversationId, updater) {
+  const conversation = current[conversationId]
+  return conversation ? { ...current, [conversationId]: updater(conversation) } : current
+}
+
 export const useChatStore = create((set, get) => ({
   conversations: [],
+  conversationsById: {},
   conversationQuery: '',
   conversationStatus: 'idle',
   conversationError: null,
@@ -38,7 +51,11 @@ export const useChatStore = create((set, get) => ({
         conversations = await conversationApi.list({ signal, query })
         if (get().conversationRequestId !== requestId) return conversations
         if (get().conversationRevision !== revision) continue
-        set({ conversations: sortConversations(conversations), conversationStatus: 'success' })
+        set((state) => ({
+          conversations: sortConversations(conversations),
+          conversationsById: mergeConversationMap(state.conversationsById, conversations),
+          conversationStatus: 'success',
+        }))
         return conversations
       }
       set({ conversationStatus: 'success' })
@@ -53,6 +70,22 @@ export const useChatStore = create((set, get) => ({
         return []
       }
       set({ conversationStatus: 'error', conversationError: normalized })
+      throw normalized
+    }
+  },
+
+  loadConversation: async (conversationId, { signal } = {}) => {
+    const cached = get().conversationsById[conversationId]
+    if (cached) return cached
+    try {
+      const conversation = await conversationApi.get(conversationId, { signal })
+      set((state) => ({
+        conversationsById: mergeConversationMap(state.conversationsById, [conversation]),
+      }))
+      return conversation
+    } catch (error) {
+      const normalized = normalizeApiError(error)
+      if (normalized.code === 'REQUEST_CANCELED') return null
       throw normalized
     }
   },
@@ -146,6 +179,21 @@ export const useChatStore = create((set, get) => ({
         [conversationId]: mergeMessages(state.messagesByConversation[conversationId], [message]),
       },
       conversations: updateConversationActivity(state.conversations, conversationId, message.createdAt),
+      conversationsById: updateConversationMap(state.conversationsById, conversationId, (conversation) => ({
+        ...conversation,
+        lastMessageAt: message.createdAt,
+        lastMessageId: message.id,
+        lastMessage: {
+          id: message.id,
+          senderId: message.senderId,
+          messageType: message.messageType,
+          contentPreview: message.content,
+          recalled: message.recalled,
+          createdAt: message.createdAt,
+          sentByCurrentUser: true,
+          attachmentCount: message.attachments?.length || 0,
+        },
+      })),
       conversationRevision: state.conversationRevision + 1,
     }))
     return message
@@ -157,6 +205,7 @@ export const useChatStore = create((set, get) => ({
     const result = await conversationApi.markRead(conversationId, lastReadMessageId)
     set((state) => ({
       conversations: updateConversationUnread(state.conversations, conversationId, result.unreadCount),
+      conversationsById: updateConversationMap(state.conversationsById, conversationId, (conversation) => ({ ...conversation, unreadCount: result.unreadCount })),
       conversationRevision: state.conversationRevision + 1,
     }))
     return result
@@ -168,6 +217,10 @@ export const useChatStore = create((set, get) => ({
     if (event.type === 'message.created' && conversationId) {
       set((state) => ({
         conversations: updateConversationActivity(state.conversations, conversationId, event.occurredAt),
+        conversationsById: updateConversationMap(state.conversationsById, conversationId, (conversation) => ({
+          ...conversation,
+          lastMessageAt: event.occurredAt || conversation.lastMessageAt,
+        })),
         conversationRevision: state.conversationRevision + 1,
       }))
       try {
@@ -181,6 +234,7 @@ export const useChatStore = create((set, get) => ({
       const unreadCount = Number(event.payload?.unreadCount ?? 0)
       set((state) => ({
         conversations: updateConversationUnread(state.conversations, conversationId, unreadCount),
+        conversationsById: updateConversationMap(state.conversationsById, conversationId, (conversation) => ({ ...conversation, unreadCount })),
         conversationRevision: state.conversationRevision + 1,
       }))
       return
@@ -224,6 +278,7 @@ export const useChatStore = create((set, get) => ({
     typingTimers.clear()
     set((state) => ({
       conversations: [],
+      conversationsById: {},
       conversationQuery: '',
       conversationStatus: 'idle',
       conversationError: null,

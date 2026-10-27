@@ -1,6 +1,6 @@
 import { ArrowLeft, LockKeyhole, MessageCircleMore, Users } from 'lucide-react'
 import { Avatar } from '../common/Avatar.jsx'
-import { conversationName } from '../../utils/chat.js'
+import { conversationAvatar, conversationName } from '../../utils/chat.js'
 import { MessageComposer } from './MessageComposer.jsx'
 import { MessageList } from './MessageList.jsx'
 
@@ -21,7 +21,7 @@ export function ConversationPanel({ conversation, messages, page, userId, typing
     <section className="conversation-panel">
       <header className="conversation-header">
         <button type="button" className="icon-button mobile-back" onClick={onBack} aria-label="Quay lại danh sách"><ArrowLeft size={21} /></button>
-        <Avatar name={name} src={conversation.avatarUrl} />
+        <Avatar name={name} src={conversationAvatar(conversation)} />
         <div className="conversation-heading">
           <h1>{name}</h1>
           <span><Users size={13} /> {conversation.memberIds?.length || 0} thành viên</span>

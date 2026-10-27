@@ -5,6 +5,8 @@ import main.com.chat.wechat.audit.service.AuditJsonWriter;
 import main.com.chat.wechat.common.exception.ApiException;
 import main.com.chat.wechat.common.search.SearchQueryPolicy;
 import main.com.chat.wechat.conversation.dto.AddMembersRequest;
+import main.com.chat.wechat.conversation.dto.ConversationLastMessageResponse;
+import main.com.chat.wechat.conversation.dto.ConversationPeerResponse;
 import main.com.chat.wechat.conversation.dto.ConversationResponse;
 import main.com.chat.wechat.conversation.dto.CreateConversationRequest;
 import main.com.chat.wechat.conversation.dto.MuteConversationRequest;
@@ -19,6 +21,8 @@ import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.friendship.repository.FriendshipRepository;
 import main.com.chat.wechat.friendship.repository.UserBlockRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.message.model.Message;
+import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
 import main.com.chat.wechat.notification.event.NotificationEvent;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.dto.RealtimeEvent;
@@ -35,6 +39,7 @@ import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,6 +48,7 @@ public class ConversationService {
 	private final ConversationRepository conversationRepository;
 	private final ConversationMemberRepository conversationMemberRepository;
 	private final MessageRepository messageRepository;
+	private final MessageAttachmentRepository messageAttachmentRepository;
 	private final UserRepository userRepository;
 	private final FriendshipRepository friendshipRepository;
 	private final UserBlockRepository userBlockRepository;
@@ -55,6 +61,7 @@ public class ConversationService {
 			ConversationRepository conversationRepository,
 			ConversationMemberRepository conversationMemberRepository,
 			MessageRepository messageRepository,
+			MessageAttachmentRepository messageAttachmentRepository,
 			UserRepository userRepository,
 			FriendshipRepository friendshipRepository,
 			UserBlockRepository userBlockRepository,
@@ -65,6 +72,7 @@ public class ConversationService {
 		this.conversationRepository = conversationRepository;
 		this.conversationMemberRepository = conversationMemberRepository;
 		this.messageRepository = messageRepository;
+		this.messageAttachmentRepository = messageAttachmentRepository;
 		this.userRepository = userRepository;
 		this.friendshipRepository = friendshipRepository;
 		this.userBlockRepository = userBlockRepository;
@@ -489,12 +497,41 @@ public class ConversationService {
 		Map<UUID, Integer> unreadCountsByConversationId = messageRepository.countUnreadByConversationIds(actorUserId, conversationIds);
 		Map<UUID, ConversationMember> currentMembersByConversationId =
 				conversationMemberRepository.findActiveMembersByConversationIds(actorUserId, conversationIds);
+		List<UUID> peerIds = conversations.stream()
+				.filter(conversation -> "DIRECT".equals(conversation.type()))
+				.flatMap(conversation -> memberIdsByConversationId.getOrDefault(conversation.id(), List.of()).stream())
+				.filter(userId -> !actorUserId.equals(userId))
+				.distinct()
+				.toList();
+		Map<UUID, User> peersById = userRepository.findByIds(peerIds);
+		List<UUID> lastMessageIds = conversations.stream()
+				.map(Conversation::lastMessageId)
+				.filter(Objects::nonNull)
+				.distinct()
+				.toList();
+		Map<UUID, Message> lastMessagesById = messageRepository.findByIds(lastMessageIds);
+		Map<UUID, List<main.com.chat.wechat.message.model.MessageAttachment>> attachmentsByMessageId =
+				messageAttachmentRepository.findByMessageIds(lastMessageIds);
 		return conversations.stream()
-				.map(conversation -> ConversationResponse.from(
-						conversation,
-						memberIdsByConversationId.getOrDefault(conversation.id(), List.of()),
-						unreadCountsByConversationId.getOrDefault(conversation.id(), 0),
-						currentMembersByConversationId.get(conversation.id())))
+				.map(conversation -> {
+					List<UUID> memberIds = memberIdsByConversationId.getOrDefault(conversation.id(), List.of());
+					ConversationPeerResponse peer = directPeer(actorUserId, conversation, memberIds, peersById);
+					Message lastMessage = conversation.lastMessageId() == null
+							? null
+							: lastMessagesById.get(conversation.lastMessageId());
+					ConversationLastMessageResponse lastMessageResponse = lastMessage == null ? null
+							: ConversationLastMessageResponse.from(
+									lastMessage,
+									actorUserId,
+									attachmentsByMessageId.getOrDefault(lastMessage.id(), List.of()).size());
+					return ConversationResponse.from(
+							conversation,
+							memberIds,
+							unreadCountsByConversationId.getOrDefault(conversation.id(), 0),
+							currentMembersByConversationId.get(conversation.id()),
+							peer,
+							lastMessageResponse);
+				})
 				.toList();
 	}
 
@@ -503,13 +540,43 @@ public class ConversationService {
 	}
 
 	private ConversationResponse toResponse(UUID actorUserId, Conversation conversation, ConversationMember currentMember) {
+		List<UUID> memberIds = conversationMemberRepository.findMemberIds(conversation.id());
 		int unreadCount = messageRepository.countUnreadByConversationIds(actorUserId, List.of(conversation.id()))
 				.getOrDefault(conversation.id(), 0);
+		List<UUID> peerIds = memberIds.stream().filter(userId -> !actorUserId.equals(userId)).toList();
+		ConversationPeerResponse peer = directPeer(actorUserId, conversation, memberIds, userRepository.findByIds(peerIds));
+		Message lastMessage = conversation.lastMessageId() == null
+				? null
+				: messageRepository.findById(conversation.lastMessageId()).orElse(null);
+		ConversationLastMessageResponse lastMessageResponse = lastMessage == null ? null
+				: ConversationLastMessageResponse.from(
+						lastMessage,
+						actorUserId,
+						messageAttachmentRepository.findByMessageId(lastMessage.id()).size());
 		return ConversationResponse.from(
 				conversation,
-				conversationMemberRepository.findMemberIds(conversation.id()),
+				memberIds,
 				unreadCount,
-				currentMember);
+				currentMember,
+				peer,
+				lastMessageResponse);
+	}
+
+	private ConversationPeerResponse directPeer(
+			UUID actorUserId,
+			Conversation conversation,
+			List<UUID> memberIds,
+			Map<UUID, User> usersById) {
+		if (!"DIRECT".equals(conversation.type())) {
+			return null;
+		}
+		return memberIds.stream()
+				.filter(userId -> !actorUserId.equals(userId))
+				.map(usersById::get)
+				.filter(Objects::nonNull)
+				.findFirst()
+				.map(ConversationPeerResponse::from)
+				.orElse(null);
 	}
 
 	private String normalizeConversationName(CreateConversationRequest request) {

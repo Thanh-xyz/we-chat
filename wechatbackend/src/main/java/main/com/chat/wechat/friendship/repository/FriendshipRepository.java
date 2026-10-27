@@ -104,7 +104,9 @@ public class FriendshipRepository {
 		jdbcTemplate.query("""
 				select receiver_id
 				from friend_requests
-				where requester_id = ? and status = 'PENDING' and receiver_id in (%s)
+				where requester_id = ? and status = 'PENDING'
+				  and (expires_at is null or expires_at > current_timestamp)
+				  and receiver_id in (%s)
 				""".formatted(placeholders(targetUserIds.size())),
 				(RowCallbackHandler) rs -> {
 					UUID userId = rs.getObject("receiver_id", UUID.class);
@@ -116,7 +118,9 @@ public class FriendshipRepository {
 		jdbcTemplate.query("""
 				select requester_id
 				from friend_requests
-				where receiver_id = ? and status = 'PENDING' and requester_id in (%s)
+				where receiver_id = ? and status = 'PENDING'
+				  and (expires_at is null or expires_at > current_timestamp)
+				  and requester_id in (%s)
 				""".formatted(placeholders(targetUserIds.size())),
 				(RowCallbackHandler) rs -> {
 					UUID userId = rs.getObject("requester_id", UUID.class);

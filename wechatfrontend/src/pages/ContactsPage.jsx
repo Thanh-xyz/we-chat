@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, Check, Clock3, LoaderCircle, Search, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Ban, Check, Clock3, LoaderCircle, MessageCircleMore, Search, UserPlus, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/common/Avatar.jsx'
@@ -30,6 +30,7 @@ export function ContactsPage() {
   const loadAll = useContactStore((state) => state.loadAll)
   const searchUsers = useContactStore((state) => state.search)
   const sendRequest = useContactStore((state) => state.sendRequest)
+  const startDirectChat = useContactStore((state) => state.startDirectChat)
   const accept = useContactStore((state) => state.accept)
   const decline = useContactStore((state) => state.decline)
   const cancel = useContactStore((state) => state.cancel)
@@ -69,7 +70,12 @@ export function ContactsPage() {
   async function action(id, operation) {
     setBusyId(id)
     setActionError('')
-    try { await operation() } catch (error) { setActionError(errorMessage(error)) } finally { setBusyId(null) }
+    try { return await operation() } catch (error) { setActionError(errorMessage(error)); return null } finally { setBusyId(null) }
+  }
+
+  async function openChat(friendId) {
+    const conversation = await action(friendId, () => startDirectChat(friendId))
+    if (conversation?.id) navigate(`/app/chat/${conversation.id}`)
   }
 
   function relationAction(row) {
@@ -82,7 +88,7 @@ export function ContactsPage() {
     }
     if (row.type === 'incoming') return <span className="contact-actions"><button type="button" className="small-action" onClick={() => action(row.id, () => accept(row.id))}><Check size={14} /> Chấp nhận</button><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => decline(row.id))}><X size={14} /> Từ chối</button></span>
     if (row.type === 'outgoing') return <button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => cancel(row.id))}><X size={14} /> Hủy lời mời</button>
-    if (row.type === 'friend') return <span className="contact-actions"><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => unfriend(row.id))}>Bỏ kết bạn</button><button type="button" className="small-action small-action--danger" onClick={() => action(row.id, () => block(row.id, 'Blocked from Contacts'))}><Ban size={14} /> Chặn</button></span>
+    if (row.type === 'friend') return <span className="contact-actions"><button type="button" className="small-action" onClick={() => openChat(row.id)}><MessageCircleMore size={14} /> Nhắn tin</button><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => unfriend(row.id))}>Bỏ kết bạn</button><button type="button" className="small-action small-action--danger" onClick={() => action(row.id, () => block(row.id, 'Blocked from Contacts'))}><Ban size={14} /> Chặn</button></span>
     return <button type="button" className="small-action" onClick={() => action(row.id, () => unblock(row.id))}>Bỏ chặn</button>
   }
 

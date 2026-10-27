@@ -101,6 +101,7 @@ class MessageServiceTest {
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 		lenient().when(messageRepository.findReactionSummariesByMessageIds(any(), eq(ACTOR_ID))).thenReturn(Map.of());
 		lenient().when(messageAttachmentRepository.findByMessageIds(any())).thenReturn(Map.of());
+		lenient().when(userRepository.findByIds(any())).thenReturn(Map.of());
 	}
 
 	@Test
@@ -125,6 +126,22 @@ class MessageServiceTest {
 		assertThat(new MessageCursorCodec().decode(response.nextCursor()))
 				.isEqualTo(new MessageCursor(middle.createdAt(), middle.id()));
 		verify(messageRepository).findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 3);
+	}
+
+	@Test
+	void listAddsSenderSummaryWithoutPerMessageUserLookups() {
+		Instant now = Instant.now();
+		Message message = messageWithId(MESSAGE_ID, OTHER_USER_ID, now);
+		User sender = activeUser(OTHER_USER_ID);
+		when(conversationService.findAccessibleConversation(ACTOR_ID, CONVERSATION_ID)).thenReturn(conversation());
+		when(messageRepository.findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 51)).thenReturn(List.of(message));
+		when(userRepository.findByIds(List.of(OTHER_USER_ID))).thenReturn(Map.of(OTHER_USER_ID, sender));
+
+		MessageResponse response = messageService.list(ACTOR_ID, CONVERSATION_ID, 50, null).items().getFirst();
+
+		assertThat(response.sender().userId()).isEqualTo(OTHER_USER_ID);
+		assertThat(response.sender().displayName()).isEqualTo(sender.displayName());
+		verify(userRepository, never()).findById(OTHER_USER_ID);
 	}
 
 	@Test

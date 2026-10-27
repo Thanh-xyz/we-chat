@@ -13,6 +13,7 @@ import main.com.chat.wechat.message.dto.EditMessageRequest;
 import main.com.chat.wechat.message.dto.MessagePageResponse;
 import main.com.chat.wechat.message.dto.MessageReactionResponse;
 import main.com.chat.wechat.message.dto.MessageResponse;
+import main.com.chat.wechat.message.dto.MessageSenderResponse;
 import main.com.chat.wechat.message.dto.ReactionRequest;
 import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.message.model.MessageAttachment;
@@ -86,7 +87,7 @@ public class MessageService {
 
 	@Transactional
 	public MessageResponse send(UUID actorUserId, UUID conversationId, CreateMessageRequest request) {
-		findActiveUser(actorUserId);
+		User actor = findActiveUser(actorUserId);
 		Conversation conversation = conversationService.findAccessibleConversation(actorUserId, conversationId);
 		requireCanSendInConversation(actorUserId, conversation);
 		String messageType = normalizeClientMessageType(request.messageType());
@@ -115,7 +116,7 @@ public class MessageService {
 				now));
 		List<MessageAttachment> attachments = saveAttachments(message.id(), actorUserId, conversation.id(), request, pendingAttachments, now);
 		conversationRepository.updateLastMessage(conversation.id(), message.id(), now);
-		MessageResponse response = MessageResponse.from(message, List.of(), attachments);
+		MessageResponse response = MessageResponse.from(message, List.of(), attachments, MessageSenderResponse.from(actor));
 		auditLogService.logSuccess(
 				"MESSAGE_CREATE",
 				"MESSAGE",
@@ -186,7 +187,8 @@ public class MessageService {
 		MessageResponse response = MessageResponse.from(
 				updated,
 				messageRepository.findReactionSummaries(updated.id(), actorUserId),
-				messageAttachmentRepository.findByMessageId(updated.id()));
+				messageAttachmentRepository.findByMessageId(updated.id()),
+				messageSender(updated.senderId()));
 		publishConversationEvent(
 				updated.conversationId(),
 				RealtimeEvent.of("message.edited", updated.conversationId(), updated.id(), actorUserId, null, Map.of("messageId", updated.id())));
@@ -204,7 +206,11 @@ public class MessageService {
 			throw new ApiException(HttpStatus.BAD_REQUEST, "System messages cannot be recalled");
 		}
 		if (message.recalled() || message.recalledAt() != null) {
-			return MessageResponse.from(message, messageRepository.findReactionSummaries(message.id(), actorUserId));
+			return MessageResponse.from(
+					message,
+					messageRepository.findReactionSummaries(message.id(), actorUserId),
+					List.of(),
+					messageSender(message.senderId()));
 		}
 		Instant now = Instant.now();
 		if (message.createdAt().plus(RECALL_WINDOW).isBefore(now)) {
@@ -213,7 +219,11 @@ public class MessageService {
 		Message recalled = messageRepository.recall(message.id(), now);
 		messageAttachmentRepository.softDeleteByMessageId(message.id(), now);
 		auditLogService.log("MESSAGE_RECALL", "MESSAGE", message.id().toString(), null, auditJsonWriter.write(new MessageRecallAuditValue(true)));
-		MessageResponse response = MessageResponse.from(recalled, messageRepository.findReactionSummaries(recalled.id(), actorUserId));
+		MessageResponse response = MessageResponse.from(
+				recalled,
+				messageRepository.findReactionSummaries(recalled.id(), actorUserId),
+				List.of(),
+				messageSender(recalled.senderId()));
 		publishConversationEvent(
 				recalled.conversationId(),
 				RealtimeEvent.of("message.recalled", recalled.conversationId(), recalled.id(), actorUserId, null, Map.of("messageId", recalled.id())));
@@ -300,12 +310,18 @@ public class MessageService {
 				messageRepository.findReactionSummariesByMessageIds(messageIds, actorUserId);
 		Map<UUID, List<MessageAttachment>> attachmentsByMessageId =
 				messageAttachmentRepository.findByMessageIds(messageIds);
+		Map<UUID, User> sendersById = userRepository.findByIds(messages.stream().map(Message::senderId).distinct().toList());
 		return messages.stream()
 				.map(message -> MessageResponse.from(
 						message,
 						reactionsByMessageId.getOrDefault(message.id(), List.of()),
-						attachmentsByMessageId.getOrDefault(message.id(), List.of())))
+						attachmentsByMessageId.getOrDefault(message.id(), List.of()),
+						MessageSenderResponse.from(sendersById.get(message.senderId()))))
 				.toList();
+	}
+
+	private MessageSenderResponse messageSender(UUID senderId) {
+		return MessageSenderResponse.from(userRepository.findById(senderId).orElse(null));
 	}
 
 	private MessagePageResponse toPage(UUID actorUserId, List<Message> candidates, int limit) {

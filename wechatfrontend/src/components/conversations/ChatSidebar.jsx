@@ -94,7 +94,7 @@ export function ChatSidebar({
           <button type="button" className="secondary-button" onClick={() => onSearch(query)}>Thử lại</button>
         </div>
       ) : (
-        <ConversationList conversations={conversations} activeId={activeId} messagesByConversation={messagesByConversation} onSelect={onSelect} />
+        <ConversationList conversations={conversations} activeId={activeId} messagesByConversation={messagesByConversation} query={query} onSelect={onSelect} />
       )}
     </aside>
   )
