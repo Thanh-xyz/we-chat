@@ -49,7 +49,10 @@ export async function refreshAccessToken() {
         return data.accessToken
       })
       .catch((error) => {
-        if (error?.code !== 'SESSION_CHANGED') expireSession()
+        if (error?.code === 'SESSION_CHANGED' || getRefreshToken() !== refreshToken) {
+          throw sessionChangedError()
+        }
+        expireSession()
         throw error
       })
       .finally(() => {

@@ -15,7 +15,7 @@ const axios = vi.hoisted(() => {
 
 vi.mock('axios', () => ({ default: axios }))
 
-import { clearSession, getAccessToken, setSession } from '../auth/tokenStorage.js'
+import { clearSession, getAccessToken, getRefreshToken, setSession } from '../auth/tokenStorage.js'
 import * as clientModule from './client.js'
 
 describe('API access-token provider', () => {
@@ -80,5 +80,20 @@ describe('API access-token provider', () => {
 
     await expect(tokenPromise).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
     expect(getAccessToken()).toBeNull()
+  })
+
+  it('does not expire a replacement session when an old refresh request fails', async () => {
+    let rejectRefresh
+    const refreshResponse = new Promise((resolve, reject) => { rejectRefresh = reject })
+    setSession({ accessToken: 'old-access', refreshToken: 'old-refresh', expiresIn: 1 })
+    axios.post.mockReturnValue(refreshResponse)
+
+    const tokenPromise = clientModule.getUsableAccessToken()
+    setSession({ accessToken: 'new-access', refreshToken: 'new-refresh', expiresIn: 900 })
+    rejectRefresh({ response: { status: 401 } })
+
+    await expect(tokenPromise).rejects.toMatchObject({ code: 'SESSION_CHANGED' })
+    expect(getAccessToken()).toBe('new-access')
+    expect(getRefreshToken()).toBe('new-refresh')
   })
 })
