@@ -63,6 +63,41 @@ describe('chat store cursor and realtime flow', () => {
     await firstSearch
 
     expect(useChatStore.getState().conversations).toEqual([{ id: 'new' }])
+    expect(useChatStore.getState().conversationQuery).toBe('new')
     expect(useChatStore.getState().conversationStatus).toBe('success')
+  })
+
+  it('retries a stale conversation reload after a realtime update', async () => {
+    let resolveFirstLoad
+    conversationApi.list
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFirstLoad = resolve }))
+      .mockResolvedValueOnce([{ id: 'c1', unreadCount: 7 }])
+
+    const loadPromise = useChatStore.getState().loadConversations()
+    await useChatStore.getState().handleRealtimeEvent({
+      type: 'conversation.unread.updated',
+      conversationId: 'c1',
+      payload: { unreadCount: 7 },
+    })
+    resolveFirstLoad([{ id: 'c1', unreadCount: 1 }])
+    await loadPromise
+
+    expect(conversationApi.list).toHaveBeenCalledTimes(2)
+    expect(useChatStore.getState().conversations[0].unreadCount).toBe(7)
+  })
+
+  it('ignores a previous-session conversation load after reset and a new load', async () => {
+    let resolvePreviousLoad
+    conversationApi.list
+      .mockReturnValueOnce(new Promise((resolve) => { resolvePreviousLoad = resolve }))
+      .mockResolvedValueOnce([{ id: 'new' }])
+
+    const previousLoad = useChatStore.getState().loadConversations()
+    useChatStore.getState().reset()
+    await useChatStore.getState().loadConversations()
+    resolvePreviousLoad([{ id: 'old' }])
+    await previousLoad
+
+    expect(useChatStore.getState().conversations).toEqual([{ id: 'new' }])
   })
 })

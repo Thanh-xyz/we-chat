@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { useChatStore } from '../conversations/chatStore.js'
 import { useNotificationStore } from '../notifications/notificationStore.js'
-import { getAccessToken } from '../../services/auth/tokenStorage.js'
+import { getUsableAccessToken } from '../../services/api/client.js'
 import { webSocketManager } from '../../services/websocket/WebSocketManager.js'
 
 export const useRealtimeStore = create((set, get) => ({
@@ -14,12 +14,21 @@ export const useRealtimeStore = create((set, get) => ({
     set({ activeUserId: userId })
     webSocketManager.connect({
       userId,
-      getAccessToken,
+      getAccessToken: getUsableAccessToken,
       onState: (status) => set({ status }),
       onConversationEvent: (event) => useChatStore.getState().handleRealtimeEvent(event),
       onNotificationEvent: (event) => {
         useChatStore.getState().handleNotificationEvent(event)
         useNotificationStore.getState().handleRealtimeEvent(event)
+      },
+      onConnected: ({ reconnected } = {}) => {
+        if (!reconnected) return Promise.resolve([])
+        const chatStore = useChatStore.getState()
+        const notificationStore = useNotificationStore.getState()
+        return Promise.allSettled([
+          chatStore.loadConversations({ query: chatStore.conversationQuery }),
+          notificationStore.load(),
+        ])
       },
     })
   },

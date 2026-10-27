@@ -5,6 +5,7 @@ import { normalizeApiError } from '../../services/api/errors.js'
 import { mergeMessages, sortConversations, updateConversationUnread } from '../../utils/chat.js'
 
 const typingTimers = new Map()
+const MAX_CONVERSATION_LOAD_ATTEMPTS = 2
 
 function updateConversationActivity(conversations, conversationId, occurredAt) {
   return sortConversations(conversations.map((conversation) =>
@@ -16,9 +17,11 @@ function updateConversationActivity(conversations, conversationId, occurredAt) {
 
 export const useChatStore = create((set, get) => ({
   conversations: [],
+  conversationQuery: '',
   conversationStatus: 'idle',
   conversationError: null,
   conversationRequestId: 0,
+  conversationRevision: 0,
   messagesByConversation: {},
   pagesByConversation: {},
   typingByConversation: {},
@@ -27,11 +30,18 @@ export const useChatStore = create((set, get) => ({
 
   loadConversations: async ({ signal, query = '' } = {}) => {
     const requestId = get().conversationRequestId + 1
-    set({ conversationRequestId: requestId, conversationStatus: 'loading', conversationError: null })
+    set({ conversationQuery: query, conversationRequestId: requestId, conversationStatus: 'loading', conversationError: null })
     try {
-      const conversations = await conversationApi.list({ signal, query })
-      if (get().conversationRequestId !== requestId) return conversations
-      set({ conversations: sortConversations(conversations), conversationStatus: 'success' })
+      let conversations
+      for (let attempt = 0; attempt < MAX_CONVERSATION_LOAD_ATTEMPTS; attempt += 1) {
+        const revision = get().conversationRevision
+        conversations = await conversationApi.list({ signal, query })
+        if (get().conversationRequestId !== requestId) return conversations
+        if (get().conversationRevision !== revision) continue
+        set({ conversations: sortConversations(conversations), conversationStatus: 'success' })
+        return conversations
+      }
+      set({ conversationStatus: 'success' })
       return conversations
     } catch (error) {
       const normalized = normalizeApiError(error)
@@ -136,6 +146,7 @@ export const useChatStore = create((set, get) => ({
         [conversationId]: mergeMessages(state.messagesByConversation[conversationId], [message]),
       },
       conversations: updateConversationActivity(state.conversations, conversationId, message.createdAt),
+      conversationRevision: state.conversationRevision + 1,
     }))
     return message
   },
@@ -146,6 +157,7 @@ export const useChatStore = create((set, get) => ({
     const result = await conversationApi.markRead(conversationId, lastReadMessageId)
     set((state) => ({
       conversations: updateConversationUnread(state.conversations, conversationId, result.unreadCount),
+      conversationRevision: state.conversationRevision + 1,
     }))
     return result
   },
@@ -156,6 +168,7 @@ export const useChatStore = create((set, get) => ({
     if (event.type === 'message.created' && conversationId) {
       set((state) => ({
         conversations: updateConversationActivity(state.conversations, conversationId, event.occurredAt),
+        conversationRevision: state.conversationRevision + 1,
       }))
       try {
         await get().loadLatestMessages(conversationId, { background: true })
@@ -168,6 +181,7 @@ export const useChatStore = create((set, get) => ({
       const unreadCount = Number(event.payload?.unreadCount ?? 0)
       set((state) => ({
         conversations: updateConversationUnread(state.conversations, conversationId, unreadCount),
+        conversationRevision: state.conversationRevision + 1,
       }))
       return
     }
@@ -208,16 +222,18 @@ export const useChatStore = create((set, get) => ({
   reset: () => {
     typingTimers.forEach(clearTimeout)
     typingTimers.clear()
-    set({
+    set((state) => ({
       conversations: [],
+      conversationQuery: '',
       conversationStatus: 'idle',
       conversationError: null,
-      conversationRequestId: 0,
+      conversationRequestId: state.conversationRequestId + 1,
+      conversationRevision: 0,
       messagesByConversation: {},
       pagesByConversation: {},
       typingByConversation: {},
       drafts: {},
       notificationUnread: 0,
-    })
+    }))
   },
 }))
