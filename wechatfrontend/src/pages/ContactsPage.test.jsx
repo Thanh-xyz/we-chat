@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const startDirectChat = vi.fn().mockResolvedValue({ id: 'conversation-1' })
 const contactState = {
@@ -31,6 +31,11 @@ vi.mock('../features/contacts/contactStore.js', () => ({
 import { ContactsPage } from './ContactsPage.jsx'
 
 describe('ContactsPage', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    startDirectChat.mockResolvedValue({ id: 'conversation-1' })
+  })
+
   it('starts a direct chat from a friend card and navigates to it', async () => {
     render(
       <MemoryRouter initialEntries={['/app/contacts']}>
@@ -46,5 +51,31 @@ describe('ContactsPage', () => {
 
     await waitFor(() => expect(startDirectChat).toHaveBeenCalledWith('friend-1'))
     expect(await screen.findByRole('heading', { name: 'Cuộc trò chuyện đã mở' })).toBeInTheDocument()
+  })
+
+  it('localizes presence status labels', () => {
+    render(
+      <MemoryRouter>
+        <ContactsPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Bạn bè' }))
+
+    expect(screen.getByText('@minh · Đang hoạt động')).toBeInTheDocument()
+    expect(screen.queryByText(/ONLINE/)).not.toBeInTheDocument()
+  })
+
+  it('shows contextual copy for an empty contact category', () => {
+    render(
+      <MemoryRouter>
+        <ContactsPage />
+      </MemoryRouter>,
+    )
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Lời mời đến' }))
+
+    expect(screen.getByText('Không có lời mời đến')).toBeInTheDocument()
+    expect(screen.getByText('Lời mời kết bạn mới sẽ xuất hiện tại đây.')).toBeInTheDocument()
   })
 })

@@ -17,10 +17,11 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
   const [content, setContent] = useState(draft)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const sendingRef = useRef(false)
   const stopTimer = useRef(null)
   const lastTypingSentAt = useRef(0)
   const inputRef = useRef(null)
-  const { attachments, addFiles, removeAttachment, retryAttachment, clearAttachments } = useAttachmentQueue(conversationId)
+  const { attachments, validationError, addFiles, removeAttachment, retryAttachment, clearAttachments } = useAttachmentQueue(conversationId)
 
   useEffect(() => () => {
     clearTimeout(stopTimer.current)
@@ -51,17 +52,14 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
     const normalized = content.trim()
     const successful = attachments.filter((item) => item.status === 'success')
     const pending = attachments.some((item) => item.status === 'queued' || item.status === 'uploading')
-    const failed = attachments.some((item) => item.status === 'failed' || item.status === 'cancelled')
-    if (sending || pending || failed || (!normalized && !successful.length) || normalized.length > 10_000) {
+    const failed = attachments.some((item) => item.status === 'failed' || item.status === 'cancelled' || item.status === 'rejected')
+    if (sendingRef.current || sending || pending || failed || (!normalized && !successful.length) || normalized.length > 10_000) {
       if (pending) setError('Vui lòng chờ tệp tải lên hoàn tất.')
       if (failed) setError('Hãy thử lại hoặc xóa tệp tải lên thất bại.')
       return
     }
     const messageType = successful.length ? successful[0].fileType : 'TEXT'
-    if (successful.some((item) => item.fileType !== messageType)) {
-      setError('Mỗi tin nhắn chỉ hỗ trợ một loại tệp.')
-      return
-    }
+    sendingRef.current = true
     setSending(true)
     setError('')
     try {
@@ -73,6 +71,7 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
     } catch (requestError) {
       setError(errorMessage(requestError))
     } finally {
+      sendingRef.current = false
       setSending(false)
     }
   }
@@ -86,16 +85,19 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
 
   const successful = attachments.filter((item) => item.status === 'success')
   const canSend = content.trim() || successful.length
+  const attachmentBlocked = attachments.some((item) => ['failed', 'cancelled', 'rejected'].includes(item.status))
+  const staleAttachmentError = error === 'Hãy thử lại hoặc xóa tệp tải lên thất bại.' || error === 'Mỗi tin nhắn chỉ hỗ trợ một loại tệp.'
+  const visibleError = !attachmentBlocked && staleAttachmentError ? '' : error
 
   return (
     <div className="composer-wrap">
-      {error && <div className="composer-error" role="alert">{error}</div>}
+      {(visibleError || validationError) && <div className="composer-error" role="alert">{visibleError || validationError}</div>}
       {attachments.length > 0 && <div className="attachment-queue" aria-live="polite">{attachments.map((item) => {
         const Icon = attachmentIcon(item.fileType)
         return <div className={`attachment-queue-item attachment-queue-item--${item.status}`} key={item.id}>
           <Icon size={15} />
           <span><strong>{item.file.name}</strong><small>{formatFileSize(item.file.size)} · {item.status === 'uploading' ? `Đang tải ${item.progress}%` : item.status === 'success' ? 'Sẵn sàng gửi' : item.error || item.status}</small></span>
-          {(item.status === 'failed' || item.status === 'cancelled') && <button type="button" className="icon-button" onClick={() => retryAttachment(item)} aria-label={`Thử lại ${item.file.name}`}><RotateCcw size={14} /></button>}
+          {(item.status === 'failed' || item.status === 'cancelled' || item.status === 'rejected') && <button type="button" className="icon-button" onClick={() => retryAttachment(item)} aria-label={`Thử lại ${item.file.name}`}><RotateCcw size={14} /></button>}
           <button type="button" className="icon-button" onClick={() => removeAttachment(item)} aria-label={`Xóa ${item.file.name}`}><X size={14} /></button>
           {item.status === 'uploading' && <span className="upload-progress" style={{ '--progress': `${item.progress}%` }} />}
         </div>

@@ -5,6 +5,7 @@ import { Avatar } from '../components/common/Avatar.jsx'
 import { FormAlert } from '../components/auth/AuthLayout.jsx'
 import { useContactStore } from '../features/contacts/contactStore.js'
 import { errorMessage } from '../services/api/errors.js'
+import { presenceLabel } from '../utils/chat.js'
 
 const TABS = [
   ['people', 'Mọi người'],
@@ -15,7 +16,19 @@ const TABS = [
 ]
 
 function UserSummary({ user }) {
-  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${user.status}` : ''}</small></span></>
+  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${presenceLabel(user.status)}` : ''}</small></span></>
+}
+
+function emptyState(tab, query) {
+  if (tab === 'people') return query.trim()
+    ? ['Không tìm thấy người dùng', 'Thử tên hiển thị hoặc username khác.']
+    : ['Tìm kiếm người dùng', 'Nhập tên hoặc username để bắt đầu.']
+  return {
+    friends: ['Chưa có bạn bè', 'Kết bạn để bắt đầu trò chuyện.'],
+    incoming: ['Không có lời mời đến', 'Lời mời kết bạn mới sẽ xuất hiện tại đây.'],
+    outgoing: ['Chưa gửi lời mời', 'Tìm người dùng để gửi lời mời kết bạn.'],
+    blocked: ['Chưa chặn ai', 'Những người bạn chặn sẽ xuất hiện tại đây.'],
+  }[tab]
 }
 
 export function ContactsPage() {
@@ -66,6 +79,7 @@ export function ContactsPage() {
     if (tab === 'blocked') return blocked.map((user) => ({ type: 'blocked', id: user.userId, user }))
     return searchResults.map((user) => ({ type: 'person', id: user.userId, user }))
   }, [blocked, friends, incoming, outgoing, searchResults, tab])
+  const [emptyTitle, emptyDescription] = emptyState(tab, query)
 
   async function action(id, operation) {
     setBusyId(id)
@@ -105,10 +119,13 @@ export function ContactsPage() {
           {tab === 'people' && <input className="request-message" aria-label="Lời nhắn kết bạn" placeholder="Lời nhắn (không bắt buộc)" value={message} onChange={(event) => setMessage(event.target.value)} maxLength={255} />}
         </div>
         <nav className="contact-tabs" role="tablist" aria-label="Danh mục danh bạ">
-          {TABS.map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}{id === 'incoming' && incoming.length > 0 && <b>{incoming.length}</b>}</button>)}
+          {TABS.map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'is-active' : ''} onClick={(event) => {
+            setTab(id)
+            event.currentTarget.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+          }}>{label}{id === 'incoming' && incoming.length > 0 && <b>{incoming.length}</b>}</button>)}
         </nav>
         {actionError && <FormAlert>{actionError}</FormAlert>}
-        {status === 'loading' && !friends.length ? <div className="contacts-state"><LoaderCircle className="spin" size={24} /> Đang tải danh bạ…</div> : !rows.length ? <div className="contacts-state"><Users size={32} /><strong>{tab === 'people' && !query ? 'Tìm kiếm người dùng' : 'Chưa có dữ liệu'}</strong><span>{tab === 'people' && !query ? 'Nhập tên hoặc username để bắt đầu.' : 'Khi có dữ liệu thật từ backend, dữ liệu sẽ hiển thị ở đây.'}</span></div> : <div className="contact-list">{rows.map((row) => <article className="contact-card" key={row.id}><UserSummary user={row.user} /><div>{relationAction(row)}</div>{busyId === row.id && <LoaderCircle className="contact-busy spin" size={17} />}</article>)}</div>}
+        {status === 'loading' && !friends.length ? <div className="contacts-state"><LoaderCircle className="spin" size={24} /> Đang tải danh bạ…</div> : !rows.length ? <div className="contacts-state"><Users size={32} /><strong>{emptyTitle}</strong><span>{emptyDescription}</span></div> : <div className="contact-list">{rows.map((row) => <article className="contact-card" key={row.id}><UserSummary user={row.user} /><div className="contact-card-actions">{relationAction(row)}</div>{busyId === row.id && <LoaderCircle className="contact-busy spin" size={17} />}</article>)}</div>}
       </div>
     </main>
   )

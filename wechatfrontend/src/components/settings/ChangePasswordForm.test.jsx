@@ -36,6 +36,21 @@ describe('ChangePasswordForm', () => {
     useAuthStore.setState({ status: 'authenticated', user: { username: 'test-user' } })
   })
 
+  it.each([
+    [{ current: '', next: 'new-pass-123', confirmation: 'new-pass-123' }, 'Vui lòng nhập mật khẩu hiện tại.'],
+    [{ current: 'old-pass-123', next: '', confirmation: '' }, 'Vui lòng nhập mật khẩu mới.'],
+    [{ current: 'old-pass-123', next: 'short', confirmation: 'short' }, 'Mật khẩu mới phải có từ 8 đến 128 ký tự.'],
+    [{ current: 'old-pass-123', next: 'new-pass-123', confirmation: '' }, 'Vui lòng xác nhận mật khẩu mới.'],
+  ])('shows Vietnamese validation without calling the API', (values, expectedMessage) => {
+    renderForm()
+    fillPasswords(values)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đổi mật khẩu' }))
+
+    expect(screen.getByRole('alert')).toHaveTextContent(expectedMessage)
+    expect(authApi.changePassword).not.toHaveBeenCalled()
+  })
+
   it('validates that the new password confirmation matches', () => {
     renderForm()
     fillPasswords({ confirmation: 'different-pass-123' })
