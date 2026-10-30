@@ -51,6 +51,15 @@ describe('NotificationPanel', () => {
     expect(triggerRef.current).toHaveFocus()
   })
 
+  it('closes from the close button and returns focus to the trigger', () => {
+    const { onClose, triggerRef } = renderPanel({ status: 'success' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng thông báo' }))
+
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(triggerRef.current).toHaveFocus()
+  })
+
   it('offers a retry after a load error', () => {
     const onLoad = vi.fn().mockResolvedValue(undefined)
     renderPanel({ status: 'error', error: { message: 'Mất kết nối' }, onLoad })

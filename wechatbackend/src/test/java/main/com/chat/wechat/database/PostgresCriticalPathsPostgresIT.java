@@ -425,6 +425,24 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 	}
 
 	@Test
+	void latestVisibleConversationPreviewRespectsDeleteForMeOnPostgres() {
+		User actor = insertUser(73, "preview-actor", "preview-actor@example.com", "Preview Actor");
+		User sender = insertUser(74, "preview-sender", "preview-sender@example.com", "Preview Sender");
+		UUID conversationId = insertConversation(75, "DIRECT", null, actor.id(), null);
+		Instant base = Instant.parse("2026-04-01T00:00:00Z");
+		Message visible = insertMessage(76, conversationId, sender.id(), "visible fallback", base.plusSeconds(1));
+		Message hidden = insertMessage(77, conversationId, sender.id(), "hidden latest", base.plusSeconds(2));
+		jdbc.update("insert into message_user_deletions(message_id, user_id, deleted_at) values (?, ?, ?)",
+				hidden.id(), actor.id(), timestamp(base.plusSeconds(3)));
+
+		Map<UUID, Message> actorMessages = messages.findLatestVisibleByConversationIds(actor.id(), List.of(conversationId));
+		Map<UUID, Message> senderMessages = messages.findLatestVisibleByConversationIds(sender.id(), List.of(conversationId));
+
+		assertThat(actorMessages.get(conversationId).id()).isEqualTo(visible.id());
+		assertThat(senderMessages.get(conversationId).id()).isEqualTo(hidden.id());
+	}
+
+	@Test
 	void batchUnreadPreservesMembershipReadMarkersAndVisibilityInOneQuery() {
 		User userA = insertUser(80, "unread-a", "unread-a@example.com", "Unread A");
 		User userB = insertUser(81, "unread-b", "unread-b@example.com", "Unread B");
