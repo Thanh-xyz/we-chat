@@ -1,5 +1,5 @@
 import { CheckCheck, LoaderCircle, RotateCcw, Trash2, X } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { formatConversationTime } from '../../utils/chat.js'
 
 const FOCUSABLE_SELECTOR = 'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -8,6 +8,10 @@ export function NotificationPanel({ notifications, status, error, triggerRef, on
   const panelRef = useRef(null)
   const closeButtonRef = useRef(null)
   const shouldLoadOnMountRef = useRef(!notifications.length && status === 'idle')
+  const closeAndRestoreFocus = useCallback(() => {
+    onClose()
+    triggerRef?.current?.focus()
+  }, [onClose, triggerRef])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -20,15 +24,13 @@ export function NotificationPanel({ notifications, status, error, triggerRef, on
 
     function handlePointerDown(event) {
       if (panelRef.current?.contains(event.target) || triggerRef?.current?.contains(event.target)) return
-      onClose()
-      triggerRef?.current?.focus()
+      closeAndRestoreFocus()
     }
 
     function handleKeyDown(event) {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onClose()
-        triggerRef?.current?.focus()
+        closeAndRestoreFocus()
         return
       }
       if (event.key !== 'Tab') return
@@ -51,7 +53,7 @@ export function NotificationPanel({ notifications, status, error, triggerRef, on
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [onClose, triggerRef])
+  }, [closeAndRestoreFocus, triggerRef])
 
   return (
     <section ref={panelRef} className="notification-panel" role="dialog" aria-modal="true" aria-labelledby="notification-panel-title">
@@ -59,7 +61,7 @@ export function NotificationPanel({ notifications, status, error, triggerRef, on
         <div><strong id="notification-panel-title">Thông báo</strong><small>Cập nhật từ các cuộc trò chuyện và liên hệ</small></div>
         <div className="notification-panel-actions">
           <button type="button" className="icon-button" onClick={onReadAll} aria-label="Đánh dấu tất cả đã đọc" title="Đánh dấu tất cả đã đọc"><CheckCheck size={17} /></button>
-          <button ref={closeButtonRef} type="button" className="icon-button" onClick={onClose} aria-label="Đóng thông báo"><X size={17} /></button>
+          <button ref={closeButtonRef} type="button" className="icon-button" onClick={closeAndRestoreFocus} aria-label="Đóng thông báo"><X size={17} /></button>
         </div>
       </header>
       {status === 'loading' && <div className="panel-state"><LoaderCircle className="spin" size={20} /> Đang tải…</div>}
