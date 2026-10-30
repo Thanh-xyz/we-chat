@@ -92,6 +92,41 @@ public class MessageRepository {
 		return result;
 	}
 
+	public Map<UUID, Message> findLatestVisibleByConversationIds(
+			UUID actorUserId,
+			Collection<UUID> conversationIds) {
+		if (conversationIds == null || conversationIds.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		MapSqlParameterSource parameters = new MapSqlParameterSource()
+				.addValue("actorUserId", actorUserId)
+				.addValue("conversationIds", conversationIds.stream().distinct().toList());
+		Map<UUID, Message> result = new LinkedHashMap<>();
+		namedParameterJdbcTemplate.query("""
+				select ranked.*
+				from (
+				    select m.*,
+				           row_number() over (
+				               partition by m.conversation_id
+				               order by m.created_at desc, m.id desc
+				           ) as visibility_rank
+				    from messages m
+				    where m.conversation_id in (:conversationIds)
+				      and m.deleted_at is null
+				      and not exists (
+				          select 1
+				          from message_user_deletions mud
+				          where mud.message_id = m.id and mud.user_id = :actorUserId
+				      )
+				) ranked
+				where ranked.visibility_rank = 1
+				""", parameters, (RowCallbackHandler) rs -> {
+			Message message = mapMessage(rs);
+			result.put(message.conversationId(), message);
+		});
+		return result;
+	}
+
 	public boolean existsInConversation(UUID messageId, UUID conversationId) {
 		Integer count = jdbcTemplate.queryForObject("""
 				select count(*)
