@@ -1,14 +1,14 @@
 import { MessageCircleDashed } from 'lucide-react'
 import { Avatar } from '../common/Avatar.jsx'
-import { conversationName, formatConversationTime } from '../../utils/chat.js'
+import { conversationAvatar, conversationName, conversationPreview, formatConversationTime } from '../../utils/chat.js'
 
-export function ConversationList({ conversations, activeId, messagesByConversation, onSelect }) {
+export function ConversationList({ conversations, activeId, messagesByConversation, query = '', onSelect }) {
   if (!conversations.length) {
     return (
       <div className="sidebar-empty">
         <MessageCircleDashed size={28} />
-        <strong>Chưa có cuộc trò chuyện</strong>
-        <span>Các cuộc trò chuyện thật từ máy chủ sẽ xuất hiện tại đây.</span>
+        <strong>{query.trim() ? 'Không tìm thấy cuộc trò chuyện' : 'Chưa có cuộc trò chuyện'}</strong>
+        <span>{query.trim() ? 'Thử tên, username hoặc từ khóa khác.' : 'Bắt đầu trò chuyện từ danh bạ bạn bè.'}</span>
       </div>
     )
   }
@@ -19,9 +19,7 @@ export function ConversationList({ conversations, activeId, messagesByConversati
         const name = conversationName(conversation)
         const messages = messagesByConversation[conversation.id] || []
         const latest = messages.at(-1)
-        const preview = latest?.recalled
-          ? 'Tin nhắn đã được thu hồi'
-          : latest?.content || (conversation.lastMessageId ? 'Có tin nhắn mới' : 'Bắt đầu cuộc trò chuyện')
+        const preview = conversationPreview(conversation, latest)
         return (
           <button
             type="button"
@@ -30,7 +28,7 @@ export function ConversationList({ conversations, activeId, messagesByConversati
             onClick={() => onSelect(conversation.id)}
             aria-current={activeId === conversation.id ? 'page' : undefined}
           >
-            <Avatar name={name} src={conversation.avatarUrl} size="large" />
+            <Avatar name={name} src={conversationAvatar(conversation)} size="large" />
             <span className="conversation-copy">
               <span className="conversation-row">
                 <strong>{name}</strong>

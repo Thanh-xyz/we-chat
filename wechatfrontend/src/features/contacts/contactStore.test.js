@@ -8,8 +8,10 @@ const friendApi = vi.hoisted(() => ({
   blocked: vi.fn(),
   summary: vi.fn(),
 }))
+const conversationApi = vi.hoisted(() => ({ create: vi.fn() }))
 
 vi.mock('../../services/api/friendApi.js', () => ({ friendApi }))
+vi.mock('../../services/api/conversationApi.js', () => ({ conversationApi }))
 
 import { useContactStore } from './contactStore.js'
 
@@ -45,5 +47,14 @@ describe('contact store', () => {
 
     expect(useContactStore.getState().searchResults).toEqual([{ userId: 'new' }])
     expect(useContactStore.getState().searchStatus).toBe('results')
+  })
+
+  it('creates or gets a direct conversation for a friend', async () => {
+    conversationApi.create.mockResolvedValue({ id: 'c1' })
+
+    const conversation = await useContactStore.getState().startDirectChat('friend-1')
+
+    expect(conversationApi.create).toHaveBeenCalledWith({ type: 'DIRECT', memberIds: ['friend-1'] })
+    expect(conversation.id).toBe('c1')
   })
 })

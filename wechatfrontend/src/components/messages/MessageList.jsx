@@ -1,14 +1,17 @@
 import { ChevronUp, MessageCircleDashed, RotateCcw } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { formatMessageDate, messageDateKey } from '../../utils/chat.js'
 import { MessageBubble } from './MessageBubble.jsx'
 
 export function MessageList({ conversationId, messages, page, currentUserId, typingUsers, onLoadOlder, onRetry }) {
   const scrollRef = useRef(null)
   const initializedFor = useRef(null)
+  const stickToBottomRef = useRef(true)
   const lastMessageId = messages.at(-1)?.id
 
   useEffect(() => {
     initializedFor.current = null
+    stickToBottomRef.current = true
   }, [conversationId])
 
   useEffect(() => {
@@ -17,16 +20,17 @@ export function MessageList({ conversationId, messages, page, currentUserId, typ
     if (initializedFor.current !== conversationId) {
       node.scrollTop = node.scrollHeight
       initializedFor.current = conversationId
+      stickToBottomRef.current = true
     }
   }, [conversationId, page?.status])
 
   useEffect(() => {
     const node = scrollRef.current
     if (!node || initializedFor.current !== conversationId || !lastMessageId) return
-    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight
     const latest = messages.at(-1)
-    if (distanceFromBottom < 180 || latest?.senderId === currentUserId) {
+    if (stickToBottomRef.current || latest?.senderId === currentUserId) {
       node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' })
+      stickToBottomRef.current = true
     }
   }, [conversationId, currentUserId, lastMessageId, messages])
 
@@ -43,7 +47,15 @@ export function MessageList({ conversationId, messages, page, currentUserId, typ
   }
 
   function handleScroll(event) {
+    const node = event.currentTarget
+    stickToBottomRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 180
     if (event.currentTarget.scrollTop < 100) loadOlder()
+  }
+
+  function handleMediaLoad() {
+    const node = scrollRef.current
+    if (!node || !stickToBottomRef.current) return
+    requestAnimationFrame(() => node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' }))
   }
 
   if (page?.status === 'loading' && !messages.length) {
@@ -63,9 +75,14 @@ export function MessageList({ conversationId, messages, page, currentUserId, typ
         )}
         {!messages.length ? (
           <div className="message-state message-state--empty"><MessageCircleDashed size={34} /><strong>Chưa có tin nhắn</strong><span>Hãy gửi lời chào đầu tiên.</span></div>
-        ) : messages.map((message) => (
-          <MessageBubble key={message.id} message={message} mine={message.senderId === currentUserId} />
-        ))}
+        ) : messages.map((message, index) => {
+          const previous = messages[index - 1]
+          const showDate = !previous || messageDateKey(previous.createdAt) !== messageDateKey(message.createdAt)
+          return <div className="message-entry" key={message.id}>
+            {showDate && <div className="message-date-separator"><span>{formatMessageDate(message.createdAt)}</span></div>}
+            <MessageBubble message={message} mine={message.senderId === currentUserId} onMediaLoad={handleMediaLoad} />
+          </div>
+        })}
         {typingUsers.length > 0 && <div className="typing-bubble" aria-live="polite"><span /><span /><span /><small>Đang nhập…</small></div>}
       </div>
     </div>

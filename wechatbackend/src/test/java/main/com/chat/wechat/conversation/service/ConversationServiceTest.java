@@ -15,6 +15,8 @@ import main.com.chat.wechat.conversation.repository.ConversationRepository;
 import main.com.chat.wechat.friendship.repository.FriendshipRepository;
 import main.com.chat.wechat.friendship.repository.UserBlockRepository;
 import main.com.chat.wechat.message.repository.MessageRepository;
+import main.com.chat.wechat.message.repository.MessageAttachmentRepository;
+import main.com.chat.wechat.message.model.Message;
 import main.com.chat.wechat.notification.event.NotificationEventPublisher;
 import main.com.chat.wechat.realtime.service.RealtimeEventPublisher;
 import main.com.chat.wechat.user.model.User;
@@ -58,6 +60,9 @@ class ConversationServiceTest {
 	private MessageRepository messageRepository;
 
 	@Mock
+	private MessageAttachmentRepository messageAttachmentRepository;
+
+	@Mock
 	private UserRepository userRepository;
 
 	@Mock
@@ -86,6 +91,7 @@ class ConversationServiceTest {
 				conversationRepository,
 				conversationMemberRepository,
 				messageRepository,
+				messageAttachmentRepository,
 				userRepository,
 				friendshipRepository,
 				userBlockRepository,
@@ -94,6 +100,9 @@ class ConversationServiceTest {
 				realtimeEventPublisher,
 				notificationEventPublisher);
 		lenient().when(messageRepository.countUnreadByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
+		lenient().when(messageRepository.findByIds(any())).thenReturn(Map.of());
+		lenient().when(messageAttachmentRepository.findByMessageIds(any())).thenReturn(Map.of());
+		lenient().when(userRepository.findByIds(any())).thenReturn(Map.of());
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
 		lenient().when(friendshipRepository.existsActive(any(UUID.class), any(UUID.class))).thenReturn(true);
 		lenient().when(userBlockRepository.existsBlockBetween(any(UUID.class), any(UUID.class))).thenReturn(false);
@@ -293,6 +302,35 @@ class ConversationServiceTest {
 
 		assertThat(responses).extracting(ConversationResponse::unreadCount).containsExactly(3, 0, 2);
 		verify(messageRepository).countUnreadByConversationIds(USER_LOW, conversationIds);
+	}
+
+	@Test
+	void listDirectConversationAddsPeerIdentityAndLastMessageSummaryInBatches() {
+		Instant now = Instant.now();
+		UUID messageId = UUID.randomUUID();
+		Conversation conversation = new Conversation(
+				UUID.randomUUID(), "DIRECT", null, null, USER_LOW,
+				messageId, now, null, now, now);
+		Message lastMessage = new Message(
+				messageId, conversation.id(), USER_LOW, "Xin chào", "TEXT",
+				null, null, null, null, false, false, now, now);
+		User peer = activeUser(USER_HIGH);
+		List<UUID> conversationIds = List.of(conversation.id());
+		when(conversationRepository.findByMember(USER_LOW, false, 50, 0)).thenReturn(List.of(conversation));
+		when(conversationMemberRepository.findMemberIdsByConversationIds(conversationIds))
+				.thenReturn(Map.of(conversation.id(), List.of(USER_LOW, USER_HIGH)));
+		when(messageRepository.countUnreadByConversationIds(USER_LOW, conversationIds)).thenReturn(Map.of());
+		when(conversationMemberRepository.findActiveMembersByConversationIds(USER_LOW, conversationIds)).thenReturn(Map.of());
+		when(userRepository.findByIds(List.of(USER_HIGH))).thenReturn(Map.of(USER_HIGH, peer));
+		when(messageRepository.findByIds(List.of(messageId))).thenReturn(Map.of(messageId, lastMessage));
+		when(messageAttachmentRepository.findByMessageIds(List.of(messageId))).thenReturn(Map.of(messageId, List.of()));
+
+		ConversationResponse response = conversationService.list(USER_LOW, false, 50, 0).getFirst();
+
+		assertThat(response.displayName()).isEqualTo(peer.displayName());
+		assertThat(response.directPeer().userId()).isEqualTo(USER_HIGH);
+		assertThat(response.lastMessage().contentPreview()).isEqualTo("Xin chào");
+		assertThat(response.lastMessage().sentByCurrentUser()).isTrue();
 	}
 
 	@Test

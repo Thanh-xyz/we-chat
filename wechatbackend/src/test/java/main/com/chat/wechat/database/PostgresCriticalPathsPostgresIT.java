@@ -120,10 +120,12 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 				""", String.class);
 		assertThat(migratedVersions).containsExactly(
 				"1", "2", "3", "4", "5", "6", "7", "8", "9",
-				"10", "11", "12", "13", "14", "15", "16", "17", "18", "19");
+				"10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20");
 
 		assertThat(jdbc.queryForObject(
 				"select count(*) from pg_extension where extname = 'pg_trgm'", Integer.class)).isEqualTo(1);
+		assertThat(jdbc.queryForObject(
+				"select count(*) from pg_extension where extname = 'unaccent'", Integer.class)).isEqualTo(1);
 		assertThat(jdbc.queryForObject(
 				"select similarity('wechat', 'wecht') > 0", Boolean.class)).isTrue();
 		assertThat(jdbc.queryForObject("""
@@ -142,6 +144,14 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 			assertThat(indexes).containsKey(indexName);
 			assertThat(indexes.get(indexName).toLowerCase())
 					.contains("using gin", "gin_trgm_ops", "where");
+		}
+		for (String indexName : List.of(
+				"idx_users_username_normalized_trgm",
+				"idx_users_display_name_normalized_trgm",
+				"idx_conversations_name_normalized_trgm")) {
+			assertThat(indexes).containsKey(indexName);
+			assertThat(indexes.get(indexName).toLowerCase())
+					.contains("using gin", "chatspace_search_normalize", "gin_trgm_ops");
 		}
 		assertThat(indexes.get("idx_messages_conversation_created_id").toLowerCase())
 				.contains("conversation_id", "created_at desc", "id desc", "where (deleted_at is null)");
@@ -263,6 +273,46 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 	}
 
 	@Test
+	void friendRequestListsAndCountsOnlyIncludeActionablePendingRows() {
+		Instant currentTime = Instant.now();
+		User actor = insertUser(37, "request-actor", "request-actor@example.com", "Request Actor");
+		User pendingUser = insertUser(38, "request-pending", "request-pending@example.com", "Pending User");
+		User friend = insertUser(39, "request-friend", "request-friend@example.com", "Existing Friend");
+		User expiredUser = insertUser(390, "request-expired", "request-expired@example.com", "Expired User");
+		friendRequests.save(new FriendRequest(
+				id(370), pendingUser.id(), actor.id(), FriendRequestStatus.PENDING,
+				"pending", null, currentTime.plusSeconds(3600), currentTime, currentTime));
+		friendRequests.save(new FriendRequest(
+				id(371), friend.id(), actor.id(), FriendRequestStatus.ACCEPTED,
+				"accepted", currentTime, currentTime.plusSeconds(3600), currentTime, currentTime));
+		friendRequests.save(new FriendRequest(
+				id(372), actor.id(), friend.id(), FriendRequestStatus.PENDING,
+				"stale", null, currentTime.plusSeconds(3600), currentTime, currentTime));
+		jdbc.update("""
+				insert into friendships (id, user_id, friend_id, status, created_at)
+				values (?, ?, ?, 'ACTIVE', ?), (?, ?, ?, 'ACTIVE', ?)
+				""", id(373), actor.id(), friend.id(), timestamp(currentTime),
+				id(374), friend.id(), actor.id(), timestamp(currentTime));
+		friendRequests.save(new FriendRequest(
+				id(375), actor.id(), expiredUser.id(), FriendRequestStatus.PENDING,
+				"expired", null, currentTime.minusSeconds(1), currentTime.minusSeconds(100), currentTime.minusSeconds(100)));
+
+		assertThat(friendRequests.findIncoming(actor.id(), 20, 0))
+				.extracting(FriendRequest::id)
+				.containsExactly(id(370));
+		assertThat(friendRequests.findOutgoing(actor.id(), 20, 0)).isEmpty();
+		assertThat(friendRequests.countIncomingPending(actor.id())).isEqualTo(1);
+		assertThat(friendRequests.countOutgoingPending(actor.id())).isZero();
+		assertThat(friendRequests.expirePendingBetween(actor.id(), expiredUser.id(), currentTime)).isEqualTo(1);
+		friendRequests.save(new FriendRequest(
+				id(376), actor.id(), expiredUser.id(), FriendRequestStatus.PENDING,
+				"replacement", null, currentTime.plusSeconds(3600), currentTime, currentTime));
+		assertThat(friendRequests.findOutgoing(actor.id(), 20, 0))
+				.extracting(FriendRequest::id)
+				.containsExactly(id(376));
+	}
+
+	@Test
 	void conversationMembershipAndDeletedRowsRemainIsolated() {
 		User actor = insertUser(40, "member", "member@example.com", "Member");
 		User owner = insertUser(41, "owner", "owner@example.com", "Owner");
@@ -278,6 +328,27 @@ class PostgresCriticalPathsPostgresIT extends PostgresIntegrationTest {
 				.extracting(Conversation::id)
 				.containsExactly(visible)
 				.doesNotContain(nonMember, deleted, left);
+	}
+
+	@Test
+	void conversationSearchIsAccentInsensitiveAndDoesNotMatchTheDirectActor() {
+		User actor = insertUser(46, "thanh", "thanh@example.com", "Thành Nguyễn");
+		User peer = insertUser(47, "minh", "minh@example.com", "Minh Trần");
+		UUID direct = insertConversation(48, "DIRECT", null, actor.id(), null);
+		UUID group = insertConversation(49, "GROUP", "Trò chuyện dự án", actor.id(), null);
+		insertMember(direct, actor.id(), null, null, null);
+		insertMember(direct, peer.id(), null, null, null);
+		insertMember(group, actor.id(), null, null, null);
+
+		assertThat(conversations.searchByMember(actor.id(), "minh tran", false, 20, 0))
+				.extracting(Conversation::id)
+				.containsExactly(direct);
+		assertThat(conversations.searchByMember(actor.id(), "tro chuyen", false, 20, 0))
+				.extracting(Conversation::id)
+				.containsExactly(group);
+		assertThat(conversations.searchByMember(actor.id(), "thanh nguyen", false, 20, 0))
+				.extracting(Conversation::id)
+				.containsExactly(group);
 	}
 
 	@Test

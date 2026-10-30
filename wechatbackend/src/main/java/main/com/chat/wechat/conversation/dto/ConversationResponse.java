@@ -23,7 +23,11 @@ public record ConversationResponse(
 		Instant pinnedAt,
 		Instant archivedAt,
 		Instant createdAt,
-		Instant updatedAt) {
+		Instant updatedAt,
+		String displayName,
+		String displayAvatarUrl,
+		ConversationPeerResponse directPeer,
+		ConversationLastMessageResponse lastMessage) {
 
 	public static ConversationResponse from(Conversation conversation, List<UUID> memberIds) {
 		return from(conversation, memberIds, 0);
@@ -38,6 +42,21 @@ public record ConversationResponse(
 			List<UUID> memberIds,
 			int unreadCount,
 			main.com.chat.wechat.conversation.model.ConversationMember currentMember) {
+		return from(conversation, memberIds, unreadCount, currentMember, null, null);
+	}
+
+	public static ConversationResponse from(
+			Conversation conversation,
+			List<UUID> memberIds,
+			int unreadCount,
+			main.com.chat.wechat.conversation.model.ConversationMember currentMember,
+			ConversationPeerResponse directPeer,
+			ConversationLastMessageResponse lastMessage) {
+		String displayName = directPeer == null ? conversation.name() : directPeer.displayName();
+		if (displayName == null && directPeer != null) {
+			displayName = directPeer.username();
+		}
+		String displayAvatarUrl = directPeer == null ? conversation.avatarUrl() : directPeer.avatarUrl();
 		return new ConversationResponse(
 				conversation.id(),
 				conversation.type(),
@@ -55,6 +74,10 @@ public record ConversationResponse(
 				currentMember == null ? null : currentMember.pinnedAt(),
 				currentMember == null ? null : currentMember.archivedAt(),
 				conversation.createdAt(),
-				conversation.updatedAt());
+				conversation.updatedAt(),
+				displayName,
+				displayAvatarUrl,
+				directPeer,
+				lastMessage);
 	}
 }

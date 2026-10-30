@@ -92,6 +92,15 @@ describe('notification store', () => {
     expect(useNotificationStore.getState().notifications.map(({ id }) => id)).toEqual(['new'])
   })
 
+  it('returns to idle when the active notification load is canceled', async () => {
+    notificationApi.list.mockRejectedValue({ code: 'ERR_CANCELED' })
+
+    await useNotificationStore.getState().load()
+
+    expect(useNotificationStore.getState().status).toBe('idle')
+    expect(useNotificationStore.getState().error).toBeNull()
+  })
+
   it('marks one notification read without underflowing unread count', async () => {
     useNotificationStore.setState({ notifications: [{ id: 'n1', read: false }], unreadCount: 1 })
     notificationApi.markRead.mockResolvedValue({ id: 'n1', read: true })

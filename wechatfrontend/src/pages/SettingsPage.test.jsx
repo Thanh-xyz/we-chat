@@ -24,18 +24,18 @@ describe('SettingsPage route and theme control', () => {
     })
   })
 
-  it('redirects a guest to login instead of rendering Settings', () => {
+  it('redirects a guest to login instead of rendering Settings', async () => {
     renderAppAt('/app/settings')
 
-    expect(screen.getByRole('heading', { name: 'Đăng nhập' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Đăng nhập' })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Cài đặt' })).not.toBeInTheDocument()
   })
 
-  it('renders Settings for an authenticated user and applies the selected theme', () => {
+  it('renders Settings for an authenticated user and applies the selected theme', async () => {
     useAuthStore.setState({ status: 'authenticated', user: { username: 'test-user' } })
     renderAppAt('/app/settings')
 
-    expect(screen.getByRole('heading', { name: 'Cài đặt' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Cài đặt' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Quay lại trò chuyện' })).toHaveAttribute('href', '/app')
 
     fireEvent.click(screen.getByRole('radio', { name: /Tối/ }))

@@ -1,6 +1,8 @@
 import { apiClient } from './client.js'
 
 export const conversationApi = {
+  create: async ({ type = 'DIRECT', memberIds, name = null, avatarUrl = null }) =>
+    (await apiClient.post('/conversations', { type, memberIds, name, avatarUrl })).data,
   list: async ({ signal, query = '' } = {}) => {
     const endpoint = query.trim() ? '/conversations/search' : '/conversations'
     const { data } = await apiClient.get(endpoint, {

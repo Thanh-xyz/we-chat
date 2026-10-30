@@ -11,6 +11,7 @@ export function useChatPageController() {
   const user = useAuthStore((state) => state.user)
   const logout = useAuthStore((state) => state.logout)
   const conversations = useChatStore((state) => state.conversations)
+  const conversationsById = useChatStore((state) => state.conversationsById)
   const conversationStatus = useChatStore((state) => state.conversationStatus)
   const conversationError = useChatStore((state) => state.conversationError)
   const messagesByConversation = useChatStore((state) => state.messagesByConversation)
@@ -18,6 +19,7 @@ export function useChatPageController() {
   const typingByConversation = useChatStore((state) => state.typingByConversation)
   const drafts = useChatStore((state) => state.drafts)
   const loadConversations = useChatStore((state) => state.loadConversations)
+  const loadConversation = useChatStore((state) => state.loadConversation)
   const loadLatestMessages = useChatStore((state) => state.loadLatestMessages)
   const loadOlderMessages = useChatStore((state) => state.loadOlderMessages)
   const sendMessage = useChatStore((state) => state.sendMessage)
@@ -41,8 +43,8 @@ export function useChatPageController() {
   const removeNotification = useNotificationStore((state) => state.remove)
 
   const conversation = useMemo(
-    () => conversations.find((item) => item.id === conversationId),
-    [conversations, conversationId],
+    () => conversationsById[conversationId] || conversations.find((item) => item.id === conversationId),
+    [conversations, conversationsById, conversationId],
   )
   const messages = messagesByConversation[conversationId] || []
   const page = pagesByConversation[conversationId]
@@ -80,6 +82,14 @@ export function useChatPageController() {
     () => setNotificationPanel(!notificationPanel),
     [notificationPanel, setNotificationPanel],
   )
+  const closeNotifications = useCallback(
+    () => setNotificationPanel(false),
+    [setNotificationPanel],
+  )
+  const handleLoadNotifications = useCallback(
+    (signal) => loadNotifications({ signal }),
+    [loadNotifications],
+  )
 
   useEffect(() => {
     connectRealtime(user.id)
@@ -90,6 +100,13 @@ export function useChatPageController() {
     if (connectionStatus !== 'connected' || !conversationId) return
     loadLatestMessages(conversationId, { background: true }).catch(() => {})
   }, [connectionStatus, conversationId, loadLatestMessages])
+
+  useEffect(() => {
+    if (!conversationId || conversation) return
+    const controller = new AbortController()
+    loadConversation(conversationId, { signal: controller.signal }).catch(() => {})
+    return () => controller.abort()
+  }, [conversation, conversationId, loadConversation])
 
   useEffect(() => {
     if (!conversationId) return
@@ -134,7 +151,8 @@ export function useChatPageController() {
       onLogout: handleLogout,
       onRetryConnection: retryRealtime,
       onToggleNotifications: toggleNotifications,
-      onLoadNotifications: (signal) => loadNotifications({ signal }),
+      onCloseNotifications: closeNotifications,
+      onLoadNotifications: handleLoadNotifications,
       onReadNotification: markNotificationRead,
       onReadAllNotifications: markAllNotificationsRead,
       onRemoveNotification: removeNotification,

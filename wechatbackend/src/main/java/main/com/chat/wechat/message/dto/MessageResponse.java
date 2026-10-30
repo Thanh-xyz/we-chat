@@ -21,7 +21,8 @@ public record MessageResponse(
 		List<MessageReactionResponse> reactions,
 		List<AttachmentMetadataResponse> attachments,
 		Instant createdAt,
-		Instant updatedAt) {
+		Instant updatedAt,
+		MessageSenderResponse sender) {
 
 	public static MessageResponse from(Message message) {
 		return from(message, List.of(), List.of());
@@ -35,6 +36,14 @@ public record MessageResponse(
 			Message message,
 			List<MessageReactionResponse> reactions,
 			List<MessageAttachment> attachments) {
+		return from(message, reactions, attachments, null);
+	}
+
+	public static MessageResponse from(
+			Message message,
+			List<MessageReactionResponse> reactions,
+			List<MessageAttachment> attachments,
+			MessageSenderResponse sender) {
 		boolean recalled = message.recalled() || message.recalledAt() != null;
 		return new MessageResponse(
 				message.id(),
@@ -52,7 +61,8 @@ public record MessageResponse(
 						.map(MessageResponse::attachmentResponse)
 						.toList(),
 				message.createdAt(),
-				message.updatedAt());
+				message.updatedAt(),
+				sender);
 	}
 
 	private static AttachmentMetadataResponse attachmentResponse(MessageAttachment attachment) {

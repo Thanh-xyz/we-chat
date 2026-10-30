@@ -1,10 +1,11 @@
-import { ArrowLeft, Ban, Check, Clock3, LoaderCircle, Search, UserPlus, Users, X } from 'lucide-react'
+import { ArrowLeft, Ban, Check, Clock3, LoaderCircle, MessageCircleMore, Search, UserPlus, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Avatar } from '../components/common/Avatar.jsx'
 import { FormAlert } from '../components/auth/AuthLayout.jsx'
 import { useContactStore } from '../features/contacts/contactStore.js'
 import { errorMessage } from '../services/api/errors.js'
+import { presenceLabel } from '../utils/chat.js'
 
 const TABS = [
   ['people', 'Mọi người'],
@@ -15,7 +16,19 @@ const TABS = [
 ]
 
 function UserSummary({ user }) {
-  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${user.status}` : ''}</small></span></>
+  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${presenceLabel(user.status)}` : ''}</small></span></>
+}
+
+function emptyState(tab, query) {
+  if (tab === 'people') return query.trim()
+    ? ['Không tìm thấy người dùng', 'Thử tên hiển thị hoặc username khác.']
+    : ['Tìm kiếm người dùng', 'Nhập tên hoặc username để bắt đầu.']
+  return {
+    friends: ['Chưa có bạn bè', 'Kết bạn để bắt đầu trò chuyện.'],
+    incoming: ['Không có lời mời đến', 'Lời mời kết bạn mới sẽ xuất hiện tại đây.'],
+    outgoing: ['Chưa gửi lời mời', 'Tìm người dùng để gửi lời mời kết bạn.'],
+    blocked: ['Chưa chặn ai', 'Những người bạn chặn sẽ xuất hiện tại đây.'],
+  }[tab]
 }
 
 export function ContactsPage() {
@@ -30,6 +43,7 @@ export function ContactsPage() {
   const loadAll = useContactStore((state) => state.loadAll)
   const searchUsers = useContactStore((state) => state.search)
   const sendRequest = useContactStore((state) => state.sendRequest)
+  const startDirectChat = useContactStore((state) => state.startDirectChat)
   const accept = useContactStore((state) => state.accept)
   const decline = useContactStore((state) => state.decline)
   const cancel = useContactStore((state) => state.cancel)
@@ -65,11 +79,17 @@ export function ContactsPage() {
     if (tab === 'blocked') return blocked.map((user) => ({ type: 'blocked', id: user.userId, user }))
     return searchResults.map((user) => ({ type: 'person', id: user.userId, user }))
   }, [blocked, friends, incoming, outgoing, searchResults, tab])
+  const [emptyTitle, emptyDescription] = emptyState(tab, query)
 
   async function action(id, operation) {
     setBusyId(id)
     setActionError('')
-    try { await operation() } catch (error) { setActionError(errorMessage(error)) } finally { setBusyId(null) }
+    try { return await operation() } catch (error) { setActionError(errorMessage(error)); return null } finally { setBusyId(null) }
+  }
+
+  async function openChat(friendId) {
+    const conversation = await action(friendId, () => startDirectChat(friendId))
+    if (conversation?.id) navigate(`/app/chat/${conversation.id}`)
   }
 
   function relationAction(row) {
@@ -82,7 +102,7 @@ export function ContactsPage() {
     }
     if (row.type === 'incoming') return <span className="contact-actions"><button type="button" className="small-action" onClick={() => action(row.id, () => accept(row.id))}><Check size={14} /> Chấp nhận</button><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => decline(row.id))}><X size={14} /> Từ chối</button></span>
     if (row.type === 'outgoing') return <button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => cancel(row.id))}><X size={14} /> Hủy lời mời</button>
-    if (row.type === 'friend') return <span className="contact-actions"><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => unfriend(row.id))}>Bỏ kết bạn</button><button type="button" className="small-action small-action--danger" onClick={() => action(row.id, () => block(row.id, 'Blocked from Contacts'))}><Ban size={14} /> Chặn</button></span>
+    if (row.type === 'friend') return <span className="contact-actions"><button type="button" className="small-action" onClick={() => openChat(row.id)}><MessageCircleMore size={14} /> Nhắn tin</button><button type="button" className="small-action small-action--muted" onClick={() => action(row.id, () => unfriend(row.id))}>Bỏ kết bạn</button><button type="button" className="small-action small-action--danger" onClick={() => action(row.id, () => block(row.id, 'Blocked from Contacts'))}><Ban size={14} /> Chặn</button></span>
     return <button type="button" className="small-action" onClick={() => action(row.id, () => unblock(row.id))}>Bỏ chặn</button>
   }
 
@@ -99,10 +119,13 @@ export function ContactsPage() {
           {tab === 'people' && <input className="request-message" aria-label="Lời nhắn kết bạn" placeholder="Lời nhắn (không bắt buộc)" value={message} onChange={(event) => setMessage(event.target.value)} maxLength={255} />}
         </div>
         <nav className="contact-tabs" role="tablist" aria-label="Danh mục danh bạ">
-          {TABS.map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}{id === 'incoming' && incoming.length > 0 && <b>{incoming.length}</b>}</button>)}
+          {TABS.map(([id, label]) => <button type="button" role="tab" aria-selected={tab === id} key={id} className={tab === id ? 'is-active' : ''} onClick={(event) => {
+            setTab(id)
+            event.currentTarget.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+          }}>{label}{id === 'incoming' && incoming.length > 0 && <b>{incoming.length}</b>}</button>)}
         </nav>
         {actionError && <FormAlert>{actionError}</FormAlert>}
-        {status === 'loading' && !friends.length ? <div className="contacts-state"><LoaderCircle className="spin" size={24} /> Đang tải danh bạ…</div> : !rows.length ? <div className="contacts-state"><Users size={32} /><strong>{tab === 'people' && !query ? 'Tìm kiếm người dùng' : 'Chưa có dữ liệu'}</strong><span>{tab === 'people' && !query ? 'Nhập tên hoặc username để bắt đầu.' : 'Khi có dữ liệu thật từ backend, dữ liệu sẽ hiển thị ở đây.'}</span></div> : <div className="contact-list">{rows.map((row) => <article className="contact-card" key={row.id}><UserSummary user={row.user} /><div>{relationAction(row)}</div>{busyId === row.id && <LoaderCircle className="contact-busy spin" size={17} />}</article>)}</div>}
+        {status === 'loading' && !friends.length ? <div className="contacts-state"><LoaderCircle className="spin" size={24} /> Đang tải danh bạ…</div> : !rows.length ? <div className="contacts-state"><Users size={32} /><strong>{emptyTitle}</strong><span>{emptyDescription}</span></div> : <div className="contact-list">{rows.map((row) => <article className="contact-card" key={row.id}><UserSummary user={row.user} /><div className="contact-card-actions">{relationAction(row)}</div>{busyId === row.id && <LoaderCircle className="contact-busy spin" size={17} />}</article>)}</div>}
       </div>
     </main>
   )

@@ -25,8 +25,29 @@ export function sortConversations(conversations) {
 
 export function conversationName(conversation) {
   if (!conversation) return 'Cuộc trò chuyện'
+  if (conversation.displayName?.trim()) return conversation.displayName.trim()
   if (conversation.name?.trim()) return conversation.name.trim()
   return conversation.type === 'DIRECT' ? 'Trò chuyện trực tiếp' : 'Nhóm chưa đặt tên'
+}
+
+export function conversationAvatar(conversation) {
+  return conversation?.displayAvatarUrl || conversation?.avatarUrl || null
+}
+
+export function conversationPreview(conversation, latestMessage) {
+  if (latestMessage) return latestMessage.recalled ? 'Tin nhắn đã được thu hồi' : latestMessage.content || attachmentPreview(latestMessage.messageType)
+  const lastMessage = conversation?.lastMessage
+  if (!lastMessage) return 'Bắt đầu cuộc trò chuyện'
+  if (lastMessage.recalled) return 'Tin nhắn đã được thu hồi'
+  const preview = lastMessage.contentPreview || attachmentPreview(lastMessage.messageType)
+  return lastMessage.sentByCurrentUser && preview ? `Bạn: ${preview}` : preview
+}
+
+function attachmentPreview(messageType) {
+  if (messageType === 'IMAGE') return '[Hình ảnh]'
+  if (messageType === 'FILE') return '[Tệp đính kèm]'
+  if (messageType === 'VOICE') return '[Tin nhắn thoại]'
+  return ''
 }
 
 export function initials(value = '') {
@@ -46,4 +67,28 @@ export function formatConversationTime(value) {
   const today = new Date()
   if (date.toDateString() === today.toDateString()) return formatMessageTime(value)
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit' }).format(date)
+}
+
+export function messageDateKey(value) {
+  const date = new Date(value)
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
+}
+
+export function formatMessageDate(value) {
+  const date = new Date(value)
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(today.getDate() - 1)
+  if (date.toDateString() === today.toDateString()) return 'Hôm nay'
+  if (date.toDateString() === yesterday.toDateString()) return 'Hôm qua'
+  return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
+}
+
+export function presenceLabel(status) {
+  return {
+    ONLINE: 'Đang hoạt động',
+    OFFLINE: 'Ngoại tuyến',
+    AWAY: 'Vắng mặt',
+    BUSY: 'Đang bận',
+  }[status] || status || ''
 }

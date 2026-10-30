@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { friendApi } from '../../services/api/friendApi.js'
+import { conversationApi } from '../../services/api/conversationApi.js'
 import { normalizeApiError } from '../../services/api/errors.js'
 
 export const useContactStore = create((set, get) => ({
@@ -57,6 +58,7 @@ export const useContactStore = create((set, get) => ({
     set((state) => ({ outgoing: [request, ...state.outgoing] }))
     return request
   },
+  startDirectChat: async (friendId) => conversationApi.create({ type: 'DIRECT', memberIds: [friendId] }),
   accept: async (requestId) => {
     const request = await friendApi.acceptRequest(requestId)
     set((state) => ({ incoming: state.incoming.filter((item) => item.id !== requestId), friends: state.friends }))

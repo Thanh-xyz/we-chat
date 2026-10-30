@@ -59,20 +59,36 @@ public class FriendRequestRepository {
 
 	public List<FriendRequest> findIncoming(UUID receiverId, int limit, int offset) {
 		return jdbcTemplate.query("""
-				select *
-				from friend_requests
-				where receiver_id = ?
-				order by created_at desc
+				select fr.*
+				from friend_requests fr
+				where fr.receiver_id = ?
+				  and fr.status = 'PENDING'
+				  and (fr.expires_at is null or fr.expires_at > current_timestamp)
+				  and not exists (
+				      select 1 from friendships f
+				      where f.status = 'ACTIVE'
+				        and ((f.user_id = fr.receiver_id and f.friend_id = fr.requester_id)
+				             or (f.user_id = fr.requester_id and f.friend_id = fr.receiver_id))
+				  )
+				order by fr.created_at desc
 				limit ? offset ?
 				""", rowMapper(), receiverId, limit, offset);
 	}
 
 	public List<FriendRequest> findOutgoing(UUID requesterId, int limit, int offset) {
 		return jdbcTemplate.query("""
-				select *
-				from friend_requests
-				where requester_id = ?
-				order by created_at desc
+				select fr.*
+				from friend_requests fr
+				where fr.requester_id = ?
+				  and fr.status = 'PENDING'
+				  and (fr.expires_at is null or fr.expires_at > current_timestamp)
+				  and not exists (
+				      select 1 from friendships f
+				      where f.status = 'ACTIVE'
+				        and ((f.user_id = fr.requester_id and f.friend_id = fr.receiver_id)
+				             or (f.user_id = fr.receiver_id and f.friend_id = fr.requester_id))
+				  )
+				order by fr.created_at desc
 				limit ? offset ?
 				""", rowMapper(), requesterId, limit, offset);
 	}
@@ -82,6 +98,7 @@ public class FriendRequestRepository {
 				select *
 				from friend_requests
 				where status = 'PENDING'
+				  and (expires_at is null or expires_at > current_timestamp)
 				  and ((requester_id = ? and receiver_id = ?) or (requester_id = ? and receiver_id = ?))
 				order by created_at desc
 				limit 1
@@ -94,6 +111,7 @@ public class FriendRequestRepository {
 				select count(*)
 				from friend_requests
 				where status = 'PENDING'
+				  and (expires_at is null or expires_at > current_timestamp)
 				  and ((requester_id = ? and receiver_id = ?) or (requester_id = ? and receiver_id = ?))
 				""", Integer.class, firstUserId, secondUserId, secondUserId, firstUserId);
 		return count != null && count > 0;
@@ -117,11 +135,31 @@ public class FriendRequestRepository {
 				""", Timestamp.from(updatedAt), Timestamp.from(updatedAt), firstUserId, secondUserId, secondUserId, firstUserId);
 	}
 
+	public int expirePendingBetween(UUID firstUserId, UUID secondUserId, Instant expiredAt) {
+		return jdbcTemplate.update("""
+				update friend_requests
+				set status = 'EXPIRED', responded_at = ?, updated_at = ?
+				where status = 'PENDING'
+				  and expires_at is not null
+				  and expires_at <= ?
+				  and ((requester_id = ? and receiver_id = ?) or (requester_id = ? and receiver_id = ?))
+				""", Timestamp.from(expiredAt), Timestamp.from(expiredAt), Timestamp.from(expiredAt),
+				firstUserId, secondUserId, secondUserId, firstUserId);
+	}
+
 	public long countIncomingPending(UUID receiverId) {
 		Long count = jdbcTemplate.queryForObject("""
 				select count(*)
-				from friend_requests
-				where receiver_id = ? and status = 'PENDING'
+				from friend_requests fr
+				where fr.receiver_id = ?
+				  and fr.status = 'PENDING'
+				  and (fr.expires_at is null or fr.expires_at > current_timestamp)
+				  and not exists (
+				      select 1 from friendships f
+				      where f.status = 'ACTIVE'
+				        and ((f.user_id = fr.receiver_id and f.friend_id = fr.requester_id)
+				             or (f.user_id = fr.requester_id and f.friend_id = fr.receiver_id))
+				  )
 				""", Long.class, receiverId);
 		return count == null ? 0 : count;
 	}
@@ -129,8 +167,16 @@ public class FriendRequestRepository {
 	public long countOutgoingPending(UUID requesterId) {
 		Long count = jdbcTemplate.queryForObject("""
 				select count(*)
-				from friend_requests
-				where requester_id = ? and status = 'PENDING'
+				from friend_requests fr
+				where fr.requester_id = ?
+				  and fr.status = 'PENDING'
+				  and (fr.expires_at is null or fr.expires_at > current_timestamp)
+				  and not exists (
+				      select 1 from friendships f
+				      where f.status = 'ACTIVE'
+				        and ((f.user_id = fr.requester_id and f.friend_id = fr.receiver_id)
+				             or (f.user_id = fr.receiver_id and f.friend_id = fr.requester_id))
+				  )
 				""", Long.class, requesterId);
 		return count == null ? 0 : count;
 	}

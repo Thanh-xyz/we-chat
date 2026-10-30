@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const messageApi = vi.hoisted(() => ({ list: vi.fn(), send: vi.fn() }))
-const conversationApi = vi.hoisted(() => ({ list: vi.fn(), markRead: vi.fn() }))
+const conversationApi = vi.hoisted(() => ({ list: vi.fn(), get: vi.fn(), markRead: vi.fn() }))
 vi.mock('../../services/api/messageApi.js', () => ({ messageApi }))
 vi.mock('../../services/api/conversationApi.js', () => ({ conversationApi }))
 
@@ -84,6 +84,32 @@ describe('chat store cursor and realtime flow', () => {
 
     expect(conversationApi.list).toHaveBeenCalledTimes(2)
     expect(useChatStore.getState().conversations[0].unreadCount).toBe(7)
+  })
+
+  it('keeps the active conversation in the canonical cache when search returns no rows', async () => {
+    useChatStore.setState({
+      conversations: [{ id: 'c1', displayName: 'Bạn chat' }],
+      conversationsById: { c1: { id: 'c1', displayName: 'Bạn chat' } },
+      messagesByConversation: { c1: [{ id: 'm1', content: 'hello', createdAt: '2026-01-01T00:00:00Z' }] },
+      drafts: { c1: 'bản nháp' },
+    })
+    conversationApi.list.mockResolvedValue([])
+
+    await useChatStore.getState().loadConversations({ query: 'không có' })
+
+    expect(useChatStore.getState().conversations).toEqual([])
+    expect(useChatStore.getState().conversationsById.c1.displayName).toBe('Bạn chat')
+    expect(useChatStore.getState().messagesByConversation.c1).toHaveLength(1)
+    expect(useChatStore.getState().drafts.c1).toBe('bản nháp')
+  })
+
+  it('loads a deep-linked conversation into the canonical cache', async () => {
+    conversationApi.get.mockResolvedValue({ id: 'c-deep', displayName: 'Deep link' })
+
+    await useChatStore.getState().loadConversation('c-deep')
+
+    expect(conversationApi.get).toHaveBeenCalledWith('c-deep', { signal: undefined })
+    expect(useChatStore.getState().conversationsById['c-deep'].displayName).toBe('Deep link')
   })
 
   it('ignores a previous-session conversation load after reset and a new load', async () => {

@@ -19,6 +19,26 @@ export function ChangePasswordForm() {
     event.preventDefault()
     setError('')
 
+    if (!currentPassword) {
+      setError('Vui lòng nhập mật khẩu hiện tại.')
+      return
+    }
+
+    if (!newPassword) {
+      setError('Vui lòng nhập mật khẩu mới.')
+      return
+    }
+
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setError('Mật khẩu mới phải có từ 8 đến 128 ký tự.')
+      return
+    }
+
+    if (!confirmPassword) {
+      setError('Vui lòng xác nhận mật khẩu mới.')
+      return
+    }
+
     if (newPassword !== confirmPassword) {
       setError('Mật khẩu mới và phần xác nhận không khớp.')
       return
@@ -40,7 +60,7 @@ export function ChangePasswordForm() {
   }
 
   return (
-    <form className="settings-password-form" onSubmit={submit}>
+    <form className="settings-password-form" onSubmit={submit} noValidate>
       {error && <FormAlert>{error}</FormAlert>}
       <PasswordField
         id="current-password"

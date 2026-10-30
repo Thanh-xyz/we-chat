@@ -50,20 +50,23 @@ export function useAttachmentQueue(conversationId) {
     if (!files.length) return
 
     const available = Math.max(0, MAX_ATTACHMENTS_PER_MESSAGE - attachments.length)
+    let acceptedType = attachments.find((item) => item.status !== 'failed' && item.status !== 'cancelled' && item.status !== 'rejected')?.fileType
     const next = files.slice(0, available).map((file) => {
       const validation = validateAttachment(file)
+      const mixedType = validation.valid && acceptedType && validation.fileType !== acceptedType
+      if (validation.valid && !acceptedType) acceptedType = validation.fileType
       return {
         id: crypto.randomUUID(),
         file,
         fileType: validation.fileType,
-        status: validation.valid ? 'queued' : 'failed',
+        status: mixedType ? 'rejected' : validation.valid ? 'queued' : 'failed',
         progress: 0,
-        error: validation.valid ? '' : validation.message,
+        error: mixedType ? 'Mỗi tin nhắn chỉ hỗ trợ một loại tệp.' : validation.valid ? '' : validation.message,
       }
     })
     setAttachments((current) => [...current, ...next])
     next.filter((item) => item.status === 'queued').forEach(uploadAttachment)
-  }, [attachments.length, uploadAttachment])
+  }, [attachments, uploadAttachment])
 
   const removeAttachment = useCallback(async (item) => {
     uploadControllers.current.get(item.id)?.abort()
@@ -78,11 +81,24 @@ export function useAttachmentQueue(conversationId) {
   }, [])
 
   const retryAttachment = useCallback((item) => {
+    const acceptedType = attachments.find((candidate) => candidate.id !== item.id
+      && candidate.status !== 'failed'
+      && candidate.status !== 'cancelled'
+      && candidate.status !== 'rejected')?.fileType
+    if (acceptedType && item.fileType !== acceptedType) {
+      updateAttachment(item.id, { status: 'rejected', error: 'Mỗi tin nhắn chỉ hỗ trợ một loại tệp.' })
+      return
+    }
     updateAttachment(item.id, { status: 'queued', error: '' })
     uploadAttachment(item)
-  }, [updateAttachment, uploadAttachment])
+  }, [attachments, updateAttachment, uploadAttachment])
 
   const clearAttachments = useCallback(() => setAttachments([]), [])
 
-  return { attachments, addFiles, removeAttachment, retryAttachment, clearAttachments }
+  const rejectedNames = attachments.filter((item) => item.status === 'rejected').map((item) => item.file.name)
+  const validationError = rejectedNames.length
+    ? `Không tải lên tệp khác loại: ${rejectedNames.join(', ')}`
+    : ''
+
+  return { attachments, validationError, addFiles, removeAttachment, retryAttachment, clearAttachments }
 }

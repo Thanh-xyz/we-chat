@@ -94,6 +94,8 @@ public class FriendshipService {
 			auditLogService.logFailure("FRIEND_REQUEST_SENT", "USER", receiver.id().toString(), "Blocked relationship", auditMetadata(actorUserId, receiver.id(), null));
 			throw new ApiException(HttpStatus.FORBIDDEN, "Friend request is not allowed between these users");
 		}
+		Instant now = Instant.now();
+		friendRequestRepository.expirePendingBetween(actorUserId, receiver.id(), now);
 		FriendRequest pending = friendRequestRepository.findPendingBetween(actorUserId, receiver.id()).orElse(null);
 		if (pending != null) {
 			if (pending.requesterId().equals(receiver.id()) && pending.receiverId().equals(actorUserId)) {
@@ -101,7 +103,6 @@ public class FriendshipService {
 			}
 			throw new ApiException(HttpStatus.CONFLICT, "A pending friend request already exists");
 		}
-		Instant now = Instant.now();
 		FriendRequest friendRequest = friendRequestRepository.save(new FriendRequest(
 				UUID.randomUUID(),
 				actorUserId,
