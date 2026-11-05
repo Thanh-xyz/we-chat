@@ -504,21 +504,18 @@ public class ConversationService {
 				.distinct()
 				.toList();
 		Map<UUID, User> peersById = userRepository.findByIds(peerIds);
-		List<UUID> lastMessageIds = conversations.stream()
-				.map(Conversation::lastMessageId)
-				.filter(Objects::nonNull)
-				.distinct()
+		Map<UUID, Message> lastMessagesByConversationId =
+				messageRepository.findLatestVisibleByConversationIds(actorUserId, conversationIds);
+		List<UUID> lastMessageIds = lastMessagesByConversationId.values().stream()
+				.map(Message::id)
 				.toList();
-		Map<UUID, Message> lastMessagesById = messageRepository.findByIds(lastMessageIds);
 		Map<UUID, List<main.com.chat.wechat.message.model.MessageAttachment>> attachmentsByMessageId =
 				messageAttachmentRepository.findByMessageIds(lastMessageIds);
 		return conversations.stream()
 				.map(conversation -> {
 					List<UUID> memberIds = memberIdsByConversationId.getOrDefault(conversation.id(), List.of());
 					ConversationPeerResponse peer = directPeer(actorUserId, conversation, memberIds, peersById);
-					Message lastMessage = conversation.lastMessageId() == null
-							? null
-							: lastMessagesById.get(conversation.lastMessageId());
+					Message lastMessage = lastMessagesByConversationId.get(conversation.id());
 					ConversationLastMessageResponse lastMessageResponse = lastMessage == null ? null
 							: ConversationLastMessageResponse.from(
 									lastMessage,
@@ -545,9 +542,9 @@ public class ConversationService {
 				.getOrDefault(conversation.id(), 0);
 		List<UUID> peerIds = memberIds.stream().filter(userId -> !actorUserId.equals(userId)).toList();
 		ConversationPeerResponse peer = directPeer(actorUserId, conversation, memberIds, userRepository.findByIds(peerIds));
-		Message lastMessage = conversation.lastMessageId() == null
-				? null
-				: messageRepository.findById(conversation.lastMessageId()).orElse(null);
+		Message lastMessage = messageRepository
+				.findLatestVisibleByConversationIds(actorUserId, List.of(conversation.id()))
+				.get(conversation.id());
 		ConversationLastMessageResponse lastMessageResponse = lastMessage == null ? null
 				: ConversationLastMessageResponse.from(
 						lastMessage,

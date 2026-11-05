@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -151,6 +152,39 @@ class MessageRepositoryPaginationTest {
 		List<Message> messages = repository.findByConversationId(CONVERSATION_ID, ACTOR_ID, null, 10);
 
 		assertThat(messages).extracting(Message::id).containsExactly(id(1));
+	}
+
+	@Test
+	void latestVisibleMessageFallsBackAfterDeleteForMeAndBatchesConversations() {
+		UUID otherConversationId = UUID.fromString("00000000-0000-0000-0000-000000000011");
+		Instant createdAt = Instant.parse("2026-04-02T00:00:00Z");
+		UUID visibleId = id(1);
+		UUID hiddenId = id(2);
+		UUID otherConversationMessageId = id(3);
+		insertMessage(visibleId, OTHER_USER_ID, "visible fallback", createdAt, CONVERSATION_ID);
+		insertMessage(hiddenId, OTHER_USER_ID, "hidden latest", createdAt.plusSeconds(1), CONVERSATION_ID);
+		insertMessage(otherConversationMessageId, OTHER_USER_ID, "other conversation", createdAt.plusSeconds(2), otherConversationId);
+		jdbcTemplate.update(
+				"insert into message_user_deletions(message_id, user_id, deleted_at) values (?, ?, ?)",
+				hiddenId, ACTOR_ID, Timestamp.from(createdAt.plusSeconds(3)));
+
+		Map<UUID, Message> actorMessages = repository.findLatestVisibleByConversationIds(
+				ACTOR_ID, List.of(CONVERSATION_ID, otherConversationId));
+		Map<UUID, Message> otherUserMessages = repository.findLatestVisibleByConversationIds(
+				OTHER_USER_ID, List.of(CONVERSATION_ID));
+
+		assertThat(actorMessages)
+				.extractingByKey(CONVERSATION_ID)
+				.extracting(Message::id)
+				.isEqualTo(visibleId);
+		assertThat(actorMessages)
+				.extractingByKey(otherConversationId)
+				.extracting(Message::id)
+				.isEqualTo(otherConversationMessageId);
+		assertThat(otherUserMessages)
+				.extractingByKey(CONVERSATION_ID)
+				.extracting(Message::id)
+				.isEqualTo(hiddenId);
 	}
 
 	@Test

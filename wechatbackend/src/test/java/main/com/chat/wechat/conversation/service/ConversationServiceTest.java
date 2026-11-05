@@ -100,7 +100,7 @@ class ConversationServiceTest {
 				realtimeEventPublisher,
 				notificationEventPublisher);
 		lenient().when(messageRepository.countUnreadByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
-		lenient().when(messageRepository.findByIds(any())).thenReturn(Map.of());
+		lenient().when(messageRepository.findLatestVisibleByConversationIds(any(UUID.class), any())).thenReturn(Map.of());
 		lenient().when(messageAttachmentRepository.findByMessageIds(any())).thenReturn(Map.of());
 		lenient().when(userRepository.findByIds(any())).thenReturn(Map.of());
 		lenient().when(auditJsonWriter.write(any())).thenReturn("{}");
@@ -305,14 +305,15 @@ class ConversationServiceTest {
 	}
 
 	@Test
-	void listDirectConversationAddsPeerIdentityAndLastMessageSummaryInBatches() {
+	void listDirectConversationAddsPeerIdentityAndActorVisibleLastMessageInBatches() {
 		Instant now = Instant.now();
-		UUID messageId = UUID.randomUUID();
+		UUID visibleMessageId = UUID.randomUUID();
+		UUID globallyLatestMessageId = UUID.randomUUID();
 		Conversation conversation = new Conversation(
 				UUID.randomUUID(), "DIRECT", null, null, USER_LOW,
-				messageId, now, null, now, now);
+				globallyLatestMessageId, now, null, now, now);
 		Message lastMessage = new Message(
-				messageId, conversation.id(), USER_LOW, "Xin chào", "TEXT",
+				visibleMessageId, conversation.id(), USER_LOW, "Xin chào", "TEXT",
 				null, null, null, null, false, false, now, now);
 		User peer = activeUser(USER_HIGH);
 		List<UUID> conversationIds = List.of(conversation.id());
@@ -322,15 +323,19 @@ class ConversationServiceTest {
 		when(messageRepository.countUnreadByConversationIds(USER_LOW, conversationIds)).thenReturn(Map.of());
 		when(conversationMemberRepository.findActiveMembersByConversationIds(USER_LOW, conversationIds)).thenReturn(Map.of());
 		when(userRepository.findByIds(List.of(USER_HIGH))).thenReturn(Map.of(USER_HIGH, peer));
-		when(messageRepository.findByIds(List.of(messageId))).thenReturn(Map.of(messageId, lastMessage));
-		when(messageAttachmentRepository.findByMessageIds(List.of(messageId))).thenReturn(Map.of(messageId, List.of()));
+		when(messageRepository.findLatestVisibleByConversationIds(USER_LOW, conversationIds))
+				.thenReturn(Map.of(conversation.id(), lastMessage));
+		when(messageAttachmentRepository.findByMessageIds(List.of(visibleMessageId)))
+				.thenReturn(Map.of(visibleMessageId, List.of()));
 
 		ConversationResponse response = conversationService.list(USER_LOW, false, 50, 0).getFirst();
 
 		assertThat(response.displayName()).isEqualTo(peer.displayName());
 		assertThat(response.directPeer().userId()).isEqualTo(USER_HIGH);
 		assertThat(response.lastMessage().contentPreview()).isEqualTo("Xin chào");
+		assertThat(response.lastMessage().id()).isEqualTo(visibleMessageId);
 		assertThat(response.lastMessage().sentByCurrentUser()).isTrue();
+		verify(messageRepository).findLatestVisibleByConversationIds(USER_LOW, conversationIds);
 	}
 
 	@Test
