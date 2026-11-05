@@ -138,6 +138,17 @@ export function formatMessageDate(value) {
   return new Intl.DateTimeFormat('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date)
 }
 
+export function isOnline(status) {
+  return status === 'ONLINE'
+}
+
+/** Presence of the other member of a direct conversation, from the people cache or the server peer. */
+export function directPeerStatus(conversation, { currentUserId = null, people = {} } = {}) {
+  if (conversation?.type !== 'DIRECT') return null
+  const otherId = otherMemberIds(conversation, currentUserId)[0] || conversation.directPeer?.userId
+  return people[otherId]?.status || conversation.directPeer?.presenceStatus || null
+}
+
 export function presenceLabel(status) {
   return {
     ONLINE: 'Đang hoạt động',

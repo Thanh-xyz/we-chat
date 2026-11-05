@@ -88,5 +88,9 @@ export const useContactStore = create((set, get) => ({
     await friendApi.unblock(userId)
     set((state) => ({ blocked: state.blocked.filter((item) => item.userId !== userId) }))
   },
+  applyPresence: (userId, status) => set((state) => ({
+    friends: state.friends.map((friend) => (friend.userId === userId ? { ...friend, status } : friend)),
+    searchResults: state.searchResults.map((user) => (user.userId === userId ? { ...user, status } : user)),
+  })),
   reset: () => set({ friends: [], incoming: [], outgoing: [], blocked: [], searchResults: [], searchStatus: 'idle', searchError: null, summary: null, status: 'idle', error: null, searchRequestId: 0 }),
 }))

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Avatar } from '../common/Avatar.jsx'
 import { ConfirmDialog } from '../common/Modal.jsx'
 import { ConversationInfoPanel } from '../conversations/ConversationInfoPanel.jsx'
-import { conversationAvatar, conversationName, presenceLabel } from '../../utils/chat.js'
+import { conversationAvatar, conversationName, isOnline, presenceLabel } from '../../utils/chat.js'
 import { MessageComposer } from './MessageComposer.jsx'
 import { MessageList } from './MessageList.jsx'
 import { MessageSearch } from './MessageSearch.jsx'
@@ -57,7 +57,8 @@ export function ConversationPanel({
   const isGroup = conversation.type === 'GROUP'
   const otherId = !isGroup ? conversation.memberIds?.find((id) => id !== userId) : null
   const peer = !isGroup ? (people[otherId] || conversation.directPeer) : null
-  const presence = presenceLabel(peer?.presenceStatus || peer?.status)
+  const peerStatus = peer?.status || peer?.presenceStatus
+  const presence = presenceLabel(peerStatus)
   const subtitle = typingUsers.length
     ? 'Đang nhập…'
     : isGroup ? `${conversation.memberIds?.length || 0} thành viên`
@@ -81,7 +82,7 @@ export function ConversationPanel({
         <header className="conversation-header">
           <button type="button" className="icon-button mobile-back" onClick={onBack} aria-label="Quay lại danh sách"><ArrowLeft size={21} /></button>
           <button type="button" className="conversation-identity" onClick={() => setSidePanel(sidePanel === 'info' ? null : 'info')}>
-            <Avatar name={name} src={conversationAvatar(conversation, options)} group={isGroup} />
+            <Avatar name={name} src={conversationAvatar(conversation, options)} group={isGroup} online={isOnline(peerStatus)} />
             <span className="conversation-heading">
               <h1>{name}{conversation.muted && <BellOff size={14} aria-label="Đã tắt thông báo" />}</h1>
               <span className={typingUsers.length ? 'is-typing' : ''}>{subtitle}</span>
