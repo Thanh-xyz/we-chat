@@ -40,6 +40,8 @@ export const useChatStore = create((set, get) => ({
   typingByConversation: {},
   drafts: {},
   notificationUnread: 0,
+  showArchived: false,
+  composerModeByConversation: {},
 
   loadConversations: async ({ signal, query = '' } = {}) => {
     const requestId = get().conversationRequestId + 1
@@ -48,7 +50,7 @@ export const useChatStore = create((set, get) => ({
       let conversations
       for (let attempt = 0; attempt < MAX_CONVERSATION_LOAD_ATTEMPTS; attempt += 1) {
         const revision = get().conversationRevision
-        conversations = await conversationApi.list({ signal, query })
+        conversations = await conversationApi.list({ signal, query, includeArchived: get().showArchived })
         if (get().conversationRequestId !== requestId) return conversations
         if (get().conversationRevision !== revision) continue
         set((state) => ({
@@ -171,8 +173,8 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId, { content = null, messageType = 'TEXT', attachmentIds = [] } = {}) => {
-    const message = await messageApi.send(conversationId, { content, messageType, attachmentIds })
+  sendMessage: async (conversationId, { content = null, messageType = 'TEXT', attachmentIds = [], replyToMessageId = null } = {}) => {
+    const message = await messageApi.send(conversationId, { content, messageType, attachmentIds, replyToMessageId })
     set((state) => ({
       messagesByConversation: {
         ...state.messagesByConversation,
@@ -214,7 +216,11 @@ export const useChatStore = create((set, get) => ({
   handleRealtimeEvent: async (event) => {
     if (!event?.type) return
     const conversationId = event.conversationId
+    const known = conversationId && get().conversations.some((item) => item.id === conversationId)
     if (event.type === 'message.created' && conversationId) {
+      if (!known && !get().conversationQuery) {
+        get().loadConversations({ query: '' }).catch(() => {})
+      }
       set((state) => ({
         conversations: updateConversationActivity(state.conversations, conversationId, event.occurredAt),
         conversationsById: updateConversationMap(state.conversationsById, conversationId, (conversation) => ({
@@ -243,12 +249,21 @@ export const useChatStore = create((set, get) => ({
       get().setTyping(conversationId, event.actorUserId, event.type.endsWith('started'))
       return
     }
+    if (event.type === 'message.deleted_for_me' && conversationId) {
+      const messageId = event.messageId || event.payload?.messageId
+      if (messageId) get().removeMessageLocally(conversationId, messageId)
+      return
+    }
     if (event.type.startsWith('message.') && conversationId) {
       try {
         await get().loadLatestMessages(conversationId, { background: true })
       } catch {
         // An explicit retry remains available in the message panel.
       }
+      return
+    }
+    if (event.type.startsWith('conversation.') && conversationId && event.type !== 'conversation.read') {
+      await get().refreshConversation(conversationId)
     }
   },
 
@@ -273,6 +288,146 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  setShowArchived: async (showArchived) => {
+    set({ showArchived })
+    return get().loadConversations({ query: get().conversationQuery })
+  },
+
+  upsertConversation: (conversation) => {
+    if (!conversation?.id) return
+    set((state) => {
+      const hidden = conversation.archivedAt && !state.showArchived
+      const rest = state.conversations.filter((item) => item.id !== conversation.id)
+      return {
+        conversations: sortConversations(hidden ? rest : [...rest, conversation]),
+        conversationsById: mergeConversationMap(state.conversationsById, [conversation]),
+        conversationRevision: state.conversationRevision + 1,
+      }
+    })
+  },
+
+  removeConversation: (conversationId) => set((state) => {
+    const conversationsById = { ...state.conversationsById }
+    delete conversationsById[conversationId]
+    return {
+      conversations: state.conversations.filter((item) => item.id !== conversationId),
+      conversationsById,
+      conversationRevision: state.conversationRevision + 1,
+    }
+  }),
+
+  refreshConversation: async (conversationId) => {
+    try {
+      const conversation = await conversationApi.get(conversationId)
+      get().upsertConversation(conversation)
+      return conversation
+    } catch (error) {
+      const normalized = normalizeApiError(error)
+      if (normalized.status === 403 || normalized.status === 404) get().removeConversation(conversationId)
+      return null
+    }
+  },
+
+  createConversation: async (payload) => {
+    const conversation = await conversationApi.create(payload)
+    get().upsertConversation(conversation)
+    return conversation
+  },
+
+  updateConversation: async (conversationId, changes) => {
+    const conversation = await conversationApi.update(conversationId, changes)
+    get().upsertConversation(conversation)
+    return conversation
+  },
+
+  addMembers: async (conversationId, userIds) => {
+    const conversation = await conversationApi.addMembers(conversationId, userIds)
+    get().upsertConversation(conversation)
+    return conversation
+  },
+
+  removeMember: async (conversationId, userId) => {
+    const conversation = await conversationApi.removeMember(conversationId, userId)
+    get().upsertConversation(conversation)
+    return conversation
+  },
+
+  leaveConversation: async (conversationId) => {
+    await conversationApi.leave(conversationId)
+    get().removeConversation(conversationId)
+  },
+
+  togglePin: async (conversation) => {
+    const updated = conversation.pinnedAt
+      ? await conversationApi.unpin(conversation.id)
+      : await conversationApi.pin(conversation.id)
+    get().upsertConversation(updated)
+    return updated
+  },
+
+  toggleMute: async (conversation, mutedUntil = null) => {
+    const updated = conversation.muted
+      ? await conversationApi.unmute(conversation.id)
+      : await conversationApi.mute(conversation.id, mutedUntil)
+    get().upsertConversation(updated)
+    return updated
+  },
+
+  toggleArchive: async (conversation) => {
+    const updated = conversation.archivedAt
+      ? await conversationApi.unarchive(conversation.id)
+      : await conversationApi.archive(conversation.id)
+    get().upsertConversation(updated)
+    return updated
+  },
+
+  replaceMessage: (message) => {
+    if (!message?.conversationId) return
+    set((state) => ({
+      messagesByConversation: {
+        ...state.messagesByConversation,
+        [message.conversationId]: mergeMessages(state.messagesByConversation[message.conversationId], [message]),
+      },
+    }))
+  },
+
+  removeMessageLocally: (conversationId, messageId) => set((state) => ({
+    messagesByConversation: {
+      ...state.messagesByConversation,
+      [conversationId]: (state.messagesByConversation[conversationId] || []).filter((item) => item.id !== messageId),
+    },
+  })),
+
+  editMessage: async (message, content) => {
+    const updated = await messageApi.edit(message.id, content)
+    get().replaceMessage(updated)
+    return updated
+  },
+
+  recallMessage: async (message) => {
+    const updated = await messageApi.recall(message.id)
+    get().replaceMessage(updated)
+    return updated
+  },
+
+  deleteMessageForMe: async (message) => {
+    await messageApi.deleteForMe(message.id)
+    get().removeMessageLocally(message.conversationId, message.id)
+  },
+
+  toggleReaction: async (message, emoji) => {
+    const mine = message.reactions?.some((reaction) => reaction.emoji === emoji && reaction.reactedByMe)
+    const reactions = mine
+      ? await messageApi.removeReaction(message.id, emoji)
+      : await messageApi.addReaction(message.id, emoji)
+    get().replaceMessage({ ...message, reactions })
+    return reactions
+  },
+
+  setComposerMode: (conversationId, mode) => set((state) => ({
+    composerModeByConversation: { ...state.composerModeByConversation, [conversationId]: mode },
+  })),
+
   reset: () => {
     typingTimers.forEach(clearTimeout)
     typingTimers.clear()
@@ -289,6 +444,8 @@ export const useChatStore = create((set, get) => ({
       typingByConversation: {},
       drafts: {},
       notificationUnread: 0,
+      showArchived: false,
+      composerModeByConversation: {},
     }))
   },
 }))

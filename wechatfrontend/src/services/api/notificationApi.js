@@ -6,6 +6,6 @@ export const notificationApi = {
   markRead: async (notificationId) => (await apiClient.post(`/notifications/${notificationId}/read`)).data,
   markAllRead: async () => (await apiClient.post('/notifications/read-all')).data,
   remove: async (notificationId) => { await apiClient.delete(`/notifications/${notificationId}`) },
-  preferences: async () => (await apiClient.get('/notifications/preferences')).data,
+  preferences: async ({ signal } = {}) => (await apiClient.get('/notifications/preferences', { signal })).data,
   updatePreferences: async (preferences) => (await apiClient.put('/notifications/preferences', preferences)).data,
 }

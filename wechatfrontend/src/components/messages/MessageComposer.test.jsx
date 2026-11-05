@@ -64,4 +64,29 @@ describe('MessageComposer', () => {
     fireEvent.change(screen.getByLabelText('Nội dung tin nhắn'), { target: { value: 'next message' } })
     expect(sendButton).not.toBeDisabled()
   })
+
+  it('sends a reply with replyToMessageId and clears reply mode', async () => {
+    const onSend = vi.fn().mockResolvedValue({})
+    const onCancelMode = vi.fn()
+    render(<MessageComposer conversationId="c1" onSend={onSend} onTyping={() => {}} mode={{ type: 'reply', message: { id: 'm0', content: 'gốc' }, label: 'An' }} onCancelMode={onCancelMode} />)
+    expect(screen.getByText('Trả lời An')).toBeInTheDocument()
+    const field = screen.getByLabelText('Nội dung tin nhắn')
+    fireEvent.change(field, { target: { value: 'ok' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith({ content: 'ok', messageType: 'TEXT', attachmentIds: [], replyToMessageId: 'm0' }))
+    expect(onCancelMode).toHaveBeenCalled()
+  })
+
+  it('edits an existing message instead of sending a new one', async () => {
+    const onSend = vi.fn()
+    const onEdit = vi.fn().mockResolvedValue({})
+    const message = { id: 'm1', content: 'typo' }
+    render(<MessageComposer conversationId="c1" onSend={onSend} onTyping={() => {}} mode={{ type: 'edit', message }} onEdit={onEdit} onCancelMode={() => {}} />)
+    const field = screen.getByLabelText('Nội dung tin nhắn')
+    expect(field).toHaveValue('typo')
+    fireEvent.change(field, { target: { value: 'fixed' } })
+    fireEvent.click(screen.getByLabelText('Lưu chỉnh sửa'))
+    await waitFor(() => expect(onEdit).toHaveBeenCalledWith(message, 'fixed'))
+    expect(onSend).not.toHaveBeenCalled()
+  })
 })

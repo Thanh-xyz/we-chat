@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { initializeTheme } from './features/settings/settingsStore.js'
 import './index.css'
+import './styles/app.css'
 import App from './App.jsx'
 
 initializeTheme()

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { authApi } from '../../services/api/authApi.js'
+import { userApi } from '../../services/api/userApi.js'
 import { refreshAccessToken } from '../../services/api/client.js'
 import {
   clearSession,
@@ -51,6 +52,21 @@ export const useAuthStore = create((set, get) => ({
       if (refreshToken) await authApi.logout(refreshToken)
     } catch {
       // Local credentials must still be cleared when the server is unavailable.
+    } finally {
+      clearSession()
+      set({ status: 'anonymous', user: null, error: null })
+    }
+  },
+
+  updateProfile: async (changes) => {
+    const user = await userApi.updateMe(changes)
+    set({ user })
+    return user
+  },
+
+  logoutAll: async () => {
+    try {
+      await authApi.logoutAll()
     } finally {
       clearSession()
       set({ status: 'anonymous', user: null, error: null })
