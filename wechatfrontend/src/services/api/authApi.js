@@ -9,6 +9,9 @@ export const authApi = {
   logout: async (refreshToken) => {
     await apiClient.post('/auth/logout', { refreshToken })
   },
+  logoutAll: async () => {
+    await apiClient.post('/auth/logout-all')
+  },
   verifyEmail: async (token, { signal } = {}) => {
     await apiClient.post('/auth/verify-email', { token }, { signal })
   },

@@ -31,3 +31,37 @@ describe('MessageBubble', () => {
     expect(trigger).toHaveFocus()
   })
 })
+
+const recent = new Date().toISOString()
+
+describe('MessageBubble actions', () => {
+  it('reacts via the quick picker and toggles an existing reaction chip', () => {
+    const onReact = vi.fn()
+    const message = { id: 'm1', senderId: 'u2', content: 'Xin chào', messageType: 'TEXT', createdAt: recent, reactions: [{ emoji: '❤️', count: 2, reactedByMe: true }] }
+    render(<MessageBubble message={message} mine={false} onReact={onReact} onReply={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Thả cảm xúc'))
+    fireEvent.click(screen.getByLabelText('Thả 👍'))
+    expect(onReact).toHaveBeenCalledWith(message, '👍')
+    fireEvent.click(screen.getByLabelText('❤️ 2, bạn đã thả'))
+    expect(onReact).toHaveBeenCalledWith(message, '❤️')
+  })
+
+  it('offers edit and recall only for my recent text messages', () => {
+    const onEdit = vi.fn()
+    const onRecall = vi.fn()
+    const message = { id: 'm1', senderId: 'u1', content: 'typo', messageType: 'TEXT', createdAt: recent, reactions: [] }
+    render(<MessageBubble message={message} mine onEdit={onEdit} onRecall={onRecall} onDelete={() => {}} onReply={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Thêm thao tác'))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Chỉnh sửa/ }))
+    expect(onEdit).toHaveBeenCalledWith(message)
+  })
+
+  it('hides edit once the 15 minute window has passed', () => {
+    const message = { id: 'm1', senderId: 'u1', content: 'old', messageType: 'TEXT', createdAt: '2020-01-01T00:00:00Z', reactions: [] }
+    render(<MessageBubble message={message} mine onEdit={() => {}} onRecall={() => {}} onDelete={() => {}} onReply={() => {}} />)
+    fireEvent.click(screen.getByLabelText('Thêm thao tác'))
+    expect(screen.queryByRole('menuitem', { name: /Chỉnh sửa/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: /Thu hồi/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Xóa ở phía tôi/ })).toBeInTheDocument()
+  })
+})

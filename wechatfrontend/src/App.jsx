@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { ProtectedRoute, PublicOnlyRoute } from './app/RouteGuards.jsx'
 import { LoadingScreen } from './components/common/LoadingScreen.jsx'
+import { Toaster } from './components/common/Toaster.jsx'
 import { useAuthStore } from './features/auth/authStore.js'
 import { ChatPage } from './pages/ChatPage.jsx'
 
@@ -43,6 +44,7 @@ export default function App() {
         <Route path="/" element={<Navigate to="/app" replace />} />
         <Route path="*" element={<Navigate to="/app" replace />} />
       </Routes>
+      <Toaster />
     </Suspense>
   )
 }

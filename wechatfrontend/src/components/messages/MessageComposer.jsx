@@ -1,4 +1,4 @@
-import { File, Image, Mic, Paperclip, RotateCcw, SendHorizontal, X } from 'lucide-react'
+import { Check, CornerUpLeft, File, Image, Mic, Paperclip, Pencil, RotateCcw, SendHorizontal, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useAttachmentQueue } from '../../features/messages/useAttachmentQueue.js'
 import { errorMessage } from '../../services/api/errors.js'
@@ -13,7 +13,7 @@ function attachmentIcon(type) {
   return File
 }
 
-export function MessageComposer({ conversationId, onSend, onTyping, draft = '', onDraftChange }) {
+export function MessageComposer({ conversationId, onSend, onTyping, draft = '', onDraftChange, mode = null, onCancelMode, onEdit }) {
   const [content, setContent] = useState(draft)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -21,7 +21,36 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
   const stopTimer = useRef(null)
   const lastTypingSentAt = useRef(0)
   const inputRef = useRef(null)
+  const textareaRef = useRef(null)
+  const draftBeforeEdit = useRef('')
   const { attachments, validationError, addFiles, removeAttachment, retryAttachment, clearAttachments } = useAttachmentQueue(conversationId)
+  const editing = mode?.type === 'edit'
+  const modeMessageId = mode?.message?.id
+  const modeType = mode?.type
+
+  useEffect(() => {
+    if (!modeType) return
+    if (modeType === 'edit') {
+      setContent((current) => {
+        draftBeforeEdit.current = current
+        return mode.message.content || ''
+      })
+    }
+    textareaRef.current?.focus()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modeMessageId, modeType])
+
+  useEffect(() => {
+    const node = textareaRef.current
+    if (!node) return
+    node.style.height = 'auto'
+    node.style.height = `${Math.min(node.scrollHeight, 140)}px`
+  }, [content])
+
+  function cancelMode() {
+    if (editing) setContent(draftBeforeEdit.current)
+    onCancelMode?.()
+  }
 
   useEffect(() => () => {
     clearTimeout(stopTimer.current)
@@ -30,8 +59,28 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
 
   function updateContent(value) {
     setContent(value)
-    onDraftChange?.(value)
+    if (!editing) onDraftChange?.(value)
     signalTyping(value)
+  }
+
+  async function submitEdit() {
+    const normalized = content.trim()
+    if (sending || !normalized || normalized.length > 10_000) return
+    if (normalized === (mode.message.content || '').trim()) {
+      cancelMode()
+      return
+    }
+    setSending(true)
+    setError('')
+    try {
+      await onEdit(mode.message, normalized)
+      setContent(draftBeforeEdit.current)
+      onCancelMode?.()
+    } catch (requestError) {
+      setError(errorMessage(requestError))
+    } finally {
+      setSending(false)
+    }
   }
 
   function signalTyping(value) {
@@ -49,6 +98,7 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
   }
 
   async function submit() {
+    if (editing) return submitEdit()
     const normalized = content.trim()
     const successful = attachments.filter((item) => item.status === 'success')
     const pending = attachments.some((item) => item.status === 'queued' || item.status === 'uploading')
@@ -63,7 +113,10 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
     setSending(true)
     setError('')
     try {
-      await onSend({ content: normalized || null, messageType, attachmentIds: successful.map((item) => item.result.id) })
+      const payload = { content: normalized || null, messageType, attachmentIds: successful.map((item) => item.result.id) }
+      if (mode?.type === 'reply') payload.replyToMessageId = mode.message.id
+      await onSend(payload)
+      if (mode?.type === 'reply') onCancelMode?.()
       clearAttachments()
       setContent('')
       onDraftChange?.('')
@@ -77,7 +130,12 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
   }
 
   function handleKeyDown(event) {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (event.key === 'Escape' && mode) {
+      event.preventDefault()
+      cancelMode()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent?.isComposing) {
       event.preventDefault()
       submit()
     }
@@ -91,6 +149,16 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
 
   return (
     <div className="composer-wrap">
+      {mode && (
+        <div className={`composer-mode composer-mode--${mode.type}`}>
+          {editing ? <Pencil size={16} /> : <CornerUpLeft size={16} />}
+          <span>
+            <strong>{editing ? 'Đang chỉnh sửa tin nhắn' : `Trả lời ${mode.label || ''}`.trim()}</strong>
+            <small>{mode.message.content || 'Tệp đính kèm'}</small>
+          </span>
+          <button type="button" className="icon-button" onClick={cancelMode} aria-label={editing ? 'Hủy chỉnh sửa' : 'Hủy trả lời'}><X size={15} /></button>
+        </div>
+      )}
       {(visibleError || validationError) && <div className="composer-error" role="alert">{visibleError || validationError}</div>}
       {attachments.length > 0 && <div className="attachment-queue" aria-live="polite">{attachments.map((item) => {
         const Icon = attachmentIcon(item.fileType)
@@ -104,21 +172,22 @@ export function MessageComposer({ conversationId, onSend, onTyping, draft = '', 
       })}</div>}
       <div className="composer">
         <input ref={inputRef} type="file" hidden multiple accept={ATTACHMENT_ACCEPT} onChange={addFiles} />
-        <button type="button" className="icon-button composer-attach" onClick={() => inputRef.current?.click()} aria-label="Đính kèm tệp" title="Đính kèm tệp"><Paperclip size={19} /></button>
+        {!editing && <button type="button" className="icon-button composer-attach" onClick={() => inputRef.current?.click()} aria-label="Đính kèm tệp" title="Đính kèm tệp"><Paperclip size={19} /></button>}
         <textarea
+          ref={textareaRef}
           aria-label="Nội dung tin nhắn"
-          placeholder="Nhập tin nhắn…"
+          placeholder={editing ? 'Chỉnh sửa tin nhắn…' : 'Nhập tin nhắn…'}
           value={content}
           onChange={(event) => updateContent(event.target.value)}
           onKeyDown={handleKeyDown}
           maxLength={10_000}
           rows={1}
         />
-        <button type="button" className="send-button" onClick={submit} disabled={sending || !canSend} aria-label="Gửi tin nhắn">
-          <SendHorizontal size={20} />
+        <button type="button" className="send-button" onClick={submit} disabled={sending || !canSend} aria-label={editing ? 'Lưu chỉnh sửa' : 'Gửi tin nhắn'}>
+          {editing ? <Check size={20} /> : <SendHorizontal size={20} />}
         </button>
       </div>
-      <small className="composer-hint">Enter để gửi · Shift + Enter để xuống dòng · Tối đa 10 tệp / tin nhắn</small>
+      <small className="composer-hint">{mode ? 'Enter để ' + (editing ? 'lưu' : 'gửi') + ' · Esc để hủy' : 'Enter để gửi · Shift + Enter để xuống dòng · Tối đa 10 tệp / tin nhắn'}</small>
     </div>
   )
 }

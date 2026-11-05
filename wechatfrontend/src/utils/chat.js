@@ -23,15 +23,69 @@ export function sortConversations(conversations) {
   })
 }
 
-export function conversationName(conversation) {
+function personLabel(person) {
+  return person?.displayName || person?.username || ''
+}
+
+export function otherMemberIds(conversation, currentUserId) {
+  return (conversation?.memberIds || []).filter((id) => id !== currentUserId)
+}
+
+export function conversationName(conversation, { currentUserId = null, people = {} } = {}) {
   if (!conversation) return 'Cuộc trò chuyện'
   if (conversation.displayName?.trim()) return conversation.displayName.trim()
   if (conversation.name?.trim()) return conversation.name.trim()
-  return conversation.type === 'DIRECT' ? 'Trò chuyện trực tiếp' : 'Nhóm chưa đặt tên'
+  const others = otherMemberIds(conversation, currentUserId)
+  if (conversation.type === 'DIRECT') {
+    return personLabel(people[others[0]]) || 'Trò chuyện trực tiếp'
+  }
+  const names = others.map((id) => personLabel(people[id])).filter(Boolean)
+  if (!names.length) return 'Nhóm chưa đặt tên'
+  const shown = names.slice(0, 3).join(', ')
+  return others.length > 3 ? `${shown} +${others.length - 3}` : shown
 }
 
-export function conversationAvatar(conversation) {
-  return conversation?.displayAvatarUrl || conversation?.avatarUrl || null
+export function conversationAvatar(conversation, { currentUserId = null, people = {} } = {}) {
+  if (!conversation) return null
+  if (conversation.displayAvatarUrl) return conversation.displayAvatarUrl
+  if (conversation.avatarUrl) return conversation.avatarUrl
+  if (conversation.type !== 'DIRECT') return null
+  return people[otherMemberIds(conversation, currentUserId)[0]]?.avatarUrl || null
+}
+
+const TYPE_PREVIEW = { IMAGE: '[Hình ảnh]', FILE: '[Tệp đính kèm]', VOICE: '[Tin nhắn thoại]' }
+
+export function messagePreview(message, { currentUserId = null, people = {}, group = false } = {}) {
+  if (!message) return ''
+  if (message.recalled) return 'Tin nhắn đã được thu hồi'
+  const body = message.content?.trim() || TYPE_PREVIEW[message.messageType] || ''
+  if (message.messageType === 'SYSTEM') return body
+  if (message.senderId === currentUserId) return `Bạn: ${body}`
+  if (group) {
+    const name = personLabel(people[message.senderId] || message.sender)
+    if (name) return `${name.split(' ').at(-1)}: ${body}`
+  }
+  return body
+}
+
+export function isSameDay(left, right) {
+  if (!left || !right) return false
+  return new Date(left).toDateString() === new Date(right).toDateString()
+}
+
+export function formatDayLabel(value) {
+  if (!value) return ''
+  const date = new Date(value)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  if (date.toDateString() === today.toDateString()) return 'Hôm nay'
+  if (date.toDateString() === yesterday.toDateString()) return 'Hôm qua'
+  const label = new Intl.DateTimeFormat('vi-VN', {
+    weekday: 'long', day: '2-digit', month: '2-digit',
+    ...(date.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  }).format(date)
+  return label.charAt(0).toUpperCase() + label.slice(1)
 }
 
 export function conversationPreview(conversation, latestMessage) {
