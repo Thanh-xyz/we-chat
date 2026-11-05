@@ -46,6 +46,7 @@ public class RealtimeDestinationPolicy {
 			"notification.read",
 			"notification.read_all",
 			"notification.updated",
+			"presence.updated",
 			"user.blocked",
 			"user.unblocked");
 

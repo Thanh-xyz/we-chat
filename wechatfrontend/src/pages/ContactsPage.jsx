@@ -7,7 +7,7 @@ import { useContactStore } from '../features/contacts/contactStore.js'
 import { useChatStore } from '../features/conversations/chatStore.js'
 import { toast } from '../features/ui/toastStore.js'
 import { errorMessage } from '../services/api/errors.js'
-import { presenceLabel } from '../utils/chat.js'
+import { isOnline, presenceLabel } from '../utils/chat.js'
 
 const TABS = [
   ['people', 'Mọi người'],
@@ -18,7 +18,7 @@ const TABS = [
 ]
 
 function UserSummary({ user }) {
-  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${presenceLabel(user.status)}` : ''}</small></span></>
+  return <><Avatar name={user.displayName || user.username} src={user.avatarUrl} online={isOnline(user.status)} /><span className="contact-copy"><strong>{user.displayName || user.username}</strong><small>@{user.username}{user.status ? ` · ${presenceLabel(user.status)}` : ''}</small></span></>
 }
 
 function emptyState(tab, query) {

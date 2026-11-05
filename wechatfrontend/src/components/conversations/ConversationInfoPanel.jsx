@@ -11,7 +11,7 @@ import { toast } from '../../features/ui/toastStore.js'
 import { mediaApi } from '../../services/api/mediaApi.js'
 import { errorMessage } from '../../services/api/errors.js'
 import { formatFileSize } from '../../utils/attachments.js'
-import { conversationAvatar, conversationName, formatConversationTime } from '../../utils/chat.js'
+import { conversationAvatar, conversationName, formatConversationTime, isOnline } from '../../utils/chat.js'
 
 const MEDIA_TABS = [
   ['IMAGE', 'Ảnh', Image],
@@ -280,7 +280,7 @@ export function ConversationInfoPanel({ conversation, currentUserId, people, fri
                 const label = me ? 'Bạn' : person?.displayName || person?.username || 'Thành viên'
                 return (
                   <li key={id}>
-                    <Avatar name={person?.displayName || person?.username || label} src={person?.avatarUrl} size="small" />
+                    <Avatar name={person?.displayName || person?.username || label} src={person?.avatarUrl} size="small" online={!me && isOnline(person?.status)} />
                     <span className="member-copy">
                       <strong>{label}</strong>
                       <small>{owner ? <><Crown size={11} /> Trưởng nhóm</> : person?.username ? `@${person.username}` : 'Chưa kết bạn'}</small>

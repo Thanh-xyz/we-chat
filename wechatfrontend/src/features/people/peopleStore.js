@@ -33,6 +33,13 @@ export const usePeopleStore = create((set, get) => ({
     })
   },
 
+  setPresence: (userId, status) => {
+    if (!userId || !status) return
+    set((state) => (state.byId[userId]
+      ? { byId: { ...state.byId, [userId]: { ...state.byId[userId], status } } }
+      : state))
+  },
+
   loadFriends: async ({ signal } = {}) => {
     set({ status: 'loading' })
     try {

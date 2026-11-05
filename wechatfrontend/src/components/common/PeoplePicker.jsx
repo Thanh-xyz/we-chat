@@ -1,6 +1,7 @@
 import { Check, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Avatar } from './Avatar.jsx'
+import { isOnline } from '../../utils/chat.js'
 
 /** Selectable list of known people (usually friends). */
 export function PeoplePicker({ people, selected, onToggle, multiple = true, excludeIds = [], emptyText = 'Chưa có bạn bè nào để chọn.' }) {
@@ -33,7 +34,7 @@ export function PeoplePicker({ people, selected, onToggle, multiple = true, excl
                   className={`people-picker-item ${isSelected ? 'is-selected' : ''}`}
                   onClick={() => onToggle(person.userId)}
                 >
-                  <Avatar name={person.displayName || person.username} src={person.avatarUrl} />
+                  <Avatar name={person.displayName || person.username} src={person.avatarUrl} online={isOnline(person.status)} />
                   <span className="people-picker-copy"><strong>{person.displayName || person.username}</strong><small>@{person.username}</small></span>
                   <span className={`picker-check ${multiple ? '' : 'picker-check--radio'}`}>{isSelected && <Check size={13} strokeWidth={3} />}</span>
                 </button>

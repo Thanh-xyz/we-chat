@@ -2,7 +2,7 @@ import { Archive, ArchiveRestore, BellOff, BellRing, MessageCircleDashed, MoreHo
 import { useCallback, useRef, useState } from 'react'
 import { Avatar } from '../common/Avatar.jsx'
 import { useDismiss } from '../../hooks/useDismiss.js'
-import { conversationAvatar, conversationName, conversationPreview, formatConversationTime, messagePreview } from '../../utils/chat.js'
+import { conversationAvatar, conversationName, conversationPreview, directPeerStatus, formatConversationTime, isOnline, messagePreview } from '../../utils/chat.js'
 
 function ConversationMenu({ conversation, onAction, onClose }) {
   const ref = useRef(null)
@@ -69,7 +69,7 @@ export function ConversationList({
               onClick={() => onSelect(conversation.id)}
               aria-current={active ? 'page' : undefined}
             >
-              <Avatar name={name} src={conversationAvatar(conversation, options)} size="large" group={conversation.type === 'GROUP'} />
+              <Avatar name={name} src={conversationAvatar(conversation, options)} size="large" group={conversation.type === 'GROUP'} online={isOnline(directPeerStatus(conversation, options))} />
               <span className="conversation-copy">
                 <span className="conversation-row">
                   <strong>{name}</strong>
