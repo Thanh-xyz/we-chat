@@ -12,6 +12,7 @@ vi.mock('../../services/api/client.js', () => ({ getUsableAccessToken: vi.fn(() 
 
 import { useChatStore } from '../conversations/chatStore.js'
 import { useNotificationStore } from '../notifications/notificationStore.js'
+import { usePeopleStore } from '../people/peopleStore.js'
 import { useRealtimeStore } from './realtimeStore.js'
 
 describe('realtime store reconnect integration', () => {
@@ -26,6 +27,7 @@ describe('realtime store reconnect integration', () => {
     useChatStore.setState({ conversationQuery: 'team' })
     const loadConversations = vi.spyOn(useChatStore.getState(), 'loadConversations').mockResolvedValue([])
     const loadNotifications = vi.spyOn(useNotificationStore.getState(), 'load').mockResolvedValue({ notifications: [], unreadCount: 0 })
+    const loadFriends = vi.spyOn(usePeopleStore.getState(), 'loadFriends').mockResolvedValue([])
 
     useRealtimeStore.getState().connect('user-1')
     const options = webSocketManager.connect.mock.calls[0][0]
@@ -33,21 +35,24 @@ describe('realtime store reconnect integration', () => {
     await options.onConnected({ reconnected: false })
     expect(loadConversations).not.toHaveBeenCalled()
     expect(loadNotifications).not.toHaveBeenCalled()
+    expect(loadFriends).not.toHaveBeenCalled()
 
     await options.onConnected({ reconnected: true })
     expect(loadConversations).toHaveBeenCalledWith({ query: 'team' })
     expect(loadNotifications).toHaveBeenCalledTimes(1)
+    expect(loadFriends).toHaveBeenCalledTimes(1)
   })
 
   it('isolates one failed resync request from the other', async () => {
     const loadConversations = vi.spyOn(useChatStore.getState(), 'loadConversations').mockRejectedValue(new Error('offline'))
     const loadNotifications = vi.spyOn(useNotificationStore.getState(), 'load').mockResolvedValue({ notifications: [], unreadCount: 0 })
+    vi.spyOn(usePeopleStore.getState(), 'loadFriends').mockResolvedValue([])
     useRealtimeStore.getState().connect('user-1')
     const options = webSocketManager.connect.mock.calls[0][0]
 
     const results = await options.onConnected({ reconnected: true })
 
-    expect(results.map(({ status }) => status)).toEqual(['rejected', 'fulfilled'])
+    expect(results.map(({ status }) => status)).toEqual(['rejected', 'fulfilled', 'fulfilled'])
     expect(loadConversations).toHaveBeenCalledTimes(1)
     expect(loadNotifications).toHaveBeenCalledTimes(1)
   })

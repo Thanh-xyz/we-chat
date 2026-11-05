@@ -288,6 +288,17 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
+  applyPresence: (userId, status) => {
+    if (!userId || !status) return
+    const update = (conversation) => (conversation.directPeer?.userId === userId
+      ? { ...conversation, directPeer: { ...conversation.directPeer, presenceStatus: status } }
+      : conversation)
+    set((state) => ({
+      conversations: state.conversations.map(update),
+      conversationsById: Object.fromEntries(Object.entries(state.conversationsById).map(([id, conversation]) => [id, update(conversation)])),
+    }))
+  },
+
   setShowArchived: async (showArchived) => {
     set({ showArchived })
     return get().loadConversations({ query: get().conversationQuery })
